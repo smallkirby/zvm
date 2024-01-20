@@ -41,7 +41,7 @@ pub const system = struct {
 const expect = std.testing.expect;
 
 test "KVM_GET_API_VERSION" {
-    const fd = try open_kvm_fd();
+    const fd = try system.open_kvm_fd();
     defer _ = linux.close(fd);
 
     const api_version = try system.get_api_version(fd);
