@@ -161,15 +161,26 @@ pub const KvmRegs = extern struct {
     }
 };
 
-pub const KvmRun = extern struct { request_interrupt_window: u8, immediate_exit: u8, _padding1: [6]u8, exit_reason: u32, ready_for_interrupt_injection: u8, if_flag: u8, flags: u16, cr8: u64, apic_base: u64, uni: extern union {
-    io: extern struct {
-        direction: u8,
-        size: u8,
-        port: u16,
-        count: u32,
-        data_offset: u64,
+pub const KvmRun = extern struct {
+    request_interrupt_window: u8,
+    immediate_exit: u8,
+    _padding1: [6]u8,
+    exit_reason: u32,
+    ready_for_interrupt_injection: u8,
+    if_flag: u8,
+    flags: u16,
+    cr8: u64,
+    apic_base: u64,
+    uni: extern union {
+        io: extern struct {
+            direction: u8,
+            size: u8,
+            port: u16,
+            count: u32,
+            data_offset: u64,
+        },
     },
-} };
+};
 
 /// KVM system API which qery and set global attributes of the whole KVM subsystem.
 pub const system = struct {
