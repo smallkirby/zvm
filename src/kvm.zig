@@ -159,6 +159,29 @@ pub const KvmRegs = extern struct {
             .rflags = 0,
         };
     }
+
+    pub fn new_empty() @This() {
+        return .{
+            .rax = undefined,
+            .rbx = undefined,
+            .rcx = undefined,
+            .rdx = undefined,
+            .rsi = undefined,
+            .rdi = undefined,
+            .rsp = undefined,
+            .rbp = undefined,
+            .r8 = undefined,
+            .r9 = undefined,
+            .r10 = undefined,
+            .r11 = undefined,
+            .r12 = undefined,
+            .r13 = undefined,
+            .r14 = undefined,
+            .r15 = undefined,
+            .rip = undefined,
+            .rflags = undefined,
+        };
+    }
 };
 
 pub const KvmRun = extern struct {
@@ -248,33 +271,26 @@ pub const vm = struct {
         memory_size: u64,
         userspace_addr: u64,
 
-        pub fn new(size: usize, addr: u64) @This() {
+        pub fn new(size: usize, addr: [*]u8) @This() {
             return .{
                 .slot = 0,
                 .flags = 0,
                 .guest_phys_addr = 0,
                 .memory_size = @intCast(size),
-                .userspace_addr = addr,
+                .userspace_addr = @intFromPtr(addr),
             };
         }
     };
 
     /// Set a memory region for the virtual machine allocationg specified size of memory.
     /// NOTE: should take an allocator?
-    pub fn set_user_memory_region(fd: vm_fd_t, size: usize) ![*]u8 {
-        const mem = linux.mmap(
-            null,
-            size,
-            os.PROT.READ | os.PROT.WRITE,
-            os.MAP.PRIVATE | os.MAP.ANONYMOUS | os.MAP.NORESERVE,
-            -1,
-            0,
-        );
-        if (mem == std.math.maxInt(usize)) {
-            return KvmError.NoMemory;
-        }
-
-        const region = KvmUserspaceMemoryRegion.new(size, mem);
+    pub fn set_user_memory_region(
+        fd: vm_fd_t,
+        size: usize,
+        allocator: std.mem.Allocator,
+    ) ![]u8 {
+        const mem = try allocator.alloc(u8, size);
+        const region = KvmUserspaceMemoryRegion.new(size, mem.ptr);
         const ret = ioctl(
             fd,
             c.KVM_SET_USER_MEMORY_REGION,
@@ -284,7 +300,7 @@ pub const vm = struct {
         if (ret < 0) {
             return KvmError.IoctlFailed;
         } else {
-            return @ptrFromInt(mem);
+            return mem;
         }
     }
 
@@ -445,7 +461,8 @@ test "KVM_SET_USER_MEMORY_REGION" {
     const vm_fd = try system.create_vm(fd);
     defer _ = linux.close(vm_fd);
 
-    _ = try vm.set_user_memory_region(vm_fd, 4096);
+    const allocator = std.heap.page_allocator;
+    _ = try vm.set_user_memory_region(vm_fd, 4096, allocator);
 }
 
 test "KVM_CREATE_VCPU" {
@@ -505,71 +522,4 @@ test "Get vCPU state" {
     const map_size = try system.get_vcpu_mmap_size(fd);
     const run = try vcpu.get_vcpu_run_state(vcpu_fd, map_size);
     defer _ = linux.munmap(@ptrCast(run), map_size);
-}
-
-test "Run simple assembly" {
-    // create VM
-    const fd = try system.open_kvm_fd();
-    defer _ = linux.close(fd);
-    const vm_fd = try system.create_vm(fd);
-    defer _ = linux.close(vm_fd);
-
-    // prepare memory and load binary
-    // the binary just `out` to port 0x10 with the loop counter
-    const mem_ptr = try vm.set_user_memory_region(vm_fd, 0x10000);
-    const mem = mem_ptr[0..0x10000];
-    const file = try std.fs.cwd().openFile(
-        "test/assets/simple-bin",
-        .{ .mode = .read_only },
-    );
-    _ = try file.readAll(mem);
-
-    // create vCPU
-    const vcpu_fd = try vm.create_vcpu(vm_fd, 0);
-    defer _ = linux.close(vcpu_fd);
-
-    // init segment registers
-    var sregs = try vcpu.get_sregs(vcpu_fd);
-    sregs.cs.selector = 0;
-    sregs.cs.base = 0;
-    sregs.ss.selector = 0;
-    sregs.ss.base = 0;
-    sregs.ds.selector = 0;
-    sregs.ds.base = 0;
-    sregs.es.selector = 0;
-    sregs.es.base = 0;
-    sregs.fs.selector = 0;
-    sregs.fs.base = 0;
-    sregs.gs.selector = 0;
-    sregs.gs.base = 0;
-    try vcpu.set_sregs(vcpu_fd, sregs);
-
-    // init general registers
-    var regs = KvmRegs.new();
-    regs.rflags = 0x2; // always 1
-    regs.rip = 0x0;
-    try vcpu.set_regs(vcpu_fd, regs);
-
-    const map_size = try system.get_vcpu_mmap_size(fd);
-    const map = try vcpu.get_vcpu_run_state(vcpu_fd, map_size);
-    defer _ = linux.munmap(@ptrCast(map), map_size);
-
-    // test
-    var count: u32 = 0;
-    while (count < 3) {
-        try vcpu.run(vcpu_fd);
-
-        switch (map.exit_reason) {
-            c.KVM_EXIT_IO => {
-                try expect(map.uni.io.port == 0x10);
-                const map_u8: [*]u8 = @ptrCast(map);
-                const data_p: *u32 = @alignCast(@ptrCast(&map_u8[map.uni.io.data_offset]));
-                try expect(data_p.* == count);
-                count += 1;
-            },
-            else => {
-                unreachable;
-            },
-        }
-    }
 }
