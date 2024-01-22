@@ -84,6 +84,12 @@ const VM = struct {
         // Setup identity map
         try self.setup_identity_map();
 
+        // Setup interrupt controller
+        try self.init_pic_model();
+
+        // Setup PIT
+        try self.init_pit();
+
         // Create vCPUs
         // TODO: num of vCPUs should be configurable
         var vcpus = try self.general_allocator.alloc(VCPU, 1);
@@ -189,6 +195,24 @@ const VM = struct {
         }
 
         try kvm.vm.set_identity_map_addr(self.vm_fd, self.guest_mem.len + 0x1000 * 3);
+    }
+
+    /// Create an interrupt controller model
+    /// (I/O APIC for external interrupts, local vPIC for internal interrupts).
+    /// It is necessary for future vCPUs to have a local APIC.
+    /// This function must be called before any vCPU is created.
+    fn init_pic_model(self: *@This()) !void {
+        if (self.vcpus.len != 0) {
+            return VMError.NotReady;
+        }
+
+        try kvm.vm.create_irqchip(self.vm_fd);
+    }
+
+    /// Create i8254 PIT (programmable interval timer).
+    /// This function must be called after IRQ chip is created.
+    fn init_pit(self: *@This()) !void {
+        try kvm.vm.create_pit2(self.vm_fd);
     }
 
     /// Deinitialize the VM and corresponding vCPUs.

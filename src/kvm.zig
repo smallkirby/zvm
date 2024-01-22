@@ -205,6 +205,13 @@ pub const KvmRun = extern struct {
     },
 };
 
+const KvmPitConfig = extern struct {
+    /// The only valid value is 0x0 and 0x1.
+    /// When set to 1, it emulates speaker port stub.
+    flags: u32,
+    channels: [15]u32,
+};
+
 /// KVM system API which qery and set global attributes of the whole KVM subsystem.
 pub const system = struct {
     /// Get a handle to the KVM subsystem.
@@ -351,6 +358,43 @@ pub const vm = struct {
             return KvmError.IoctlFailed;
         } else {
             return @intCast(ret);
+        }
+    }
+
+    /// Setup the interrupt controller.
+    pub fn create_irqchip(fd: vm_fd_t) !void {
+        const ret = ioctl(
+            fd,
+            c.KVM_CREATE_IRQCHIP,
+            0,
+        );
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
+        }
+    }
+
+    /// Init the PIT.
+    pub fn create_pit2(fd: vm_fd_t) !void {
+        var config = KvmPitConfig{
+            .flags = 0,
+            .channels = [_]u32{0} ** 15,
+        };
+        const ret = ioctl(
+            fd,
+            c.KVM_CREATE_PIT2,
+            @intFromPtr(&config),
+        );
+
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
         }
     }
 };
