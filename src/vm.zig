@@ -95,6 +95,9 @@ const VM = struct {
         var vcpus = try self.general_allocator.alloc(VCPU, 1);
         vcpus[0] = try VCPU.new(self.kvm_fd, self.vm_fd, 0);
         self.vcpus = vcpus;
+
+        // Init protected mode
+        try self.init_protected_mode();
     }
 
     /// Clear all segment registers of all vCPUs
@@ -213,6 +216,41 @@ const VM = struct {
     /// This function must be called after IRQ chip is created.
     fn init_pit(self: *@This()) !void {
         try kvm.vm.create_pit2(self.vm_fd);
+    }
+
+    /// Switch all vCPUs to protected mode by setting segment registers.
+    /// All segment registers are set to 0 with mxiimum limit (4KB granularity).
+    fn init_protected_mode(self: *@This()) !void {
+        for (self.vcpus) |vcpu| {
+            var sregs = try kvm.vcpu.get_sregs(vcpu.vcpu_fd);
+
+            // CS, DS, ES, FS, GS, SS
+            sregs.cs.base = 0;
+            sregs.cs.limit = std.math.maxInt(u32);
+            sregs.cs.g = 1;
+            sregs.ds.base = 0;
+            sregs.ds.limit = std.math.maxInt(u32);
+            sregs.ds.g = 1;
+            sregs.es.base = 0;
+            sregs.es.limit = std.math.maxInt(u32);
+            sregs.es.g = 1;
+            sregs.fs.base = 0;
+            sregs.fs.limit = std.math.maxInt(u32);
+            sregs.fs.g = 1;
+            sregs.gs.base = 0;
+            sregs.gs.limit = std.math.maxInt(u32);
+            sregs.gs.g = 1;
+            sregs.ss.base = 0;
+            sregs.ss.limit = std.math.maxInt(u32);
+            sregs.ss.g = 1;
+
+            sregs.cs.db = 1; // 32-bit
+            sregs.ss.db = 1; // 32-bit
+
+            sregs.cr0 |= 1 << 0; // PE
+
+            try kvm.vcpu.set_sregs(vcpu.vcpu_fd, sregs);
+        }
     }
 
     /// Deinitialize the VM and corresponding vCPUs.

@@ -28,12 +28,18 @@ pub const KvmSegment = extern struct {
     limit: u32,
     selector: u16,
     type: u8,
+    /// Segment present
     present: u8,
     dpl: u8,
+    /// Default operation size (0=16-bit seg, 1=32-bit seg)
     db: u8,
+    /// Segment unusable (0=usable, 1=unusable)
     s: u8,
+    /// 64-bit mode active (for CS only)
     l: u8,
+    /// Granularity (0=byte gran, 1=page gran)
     g: u8,
+    /// Available for system use
     avl: u8,
     _unusable: u8,
     _padding: u8,
