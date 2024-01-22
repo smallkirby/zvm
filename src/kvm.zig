@@ -304,6 +304,40 @@ pub const vm = struct {
         }
     }
 
+    /// Set TSS addr.
+    pub fn set_tss_addr(fd: vm_fd_t, addr: u64) !void {
+        const ret = ioctl(
+            fd,
+            c.KVM_SET_TSS_ADDR,
+            addr,
+        );
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
+        }
+    }
+
+    /// Set identity map
+    pub fn set_identity_map_addr(fd: vm_fd_t, addr: u64) !void {
+        var v_addr = addr;
+        const ret = ioctl(
+            fd,
+            c.KVM_SET_IDENTITY_MAP_ADDR,
+            @intFromPtr(&v_addr),
+        );
+        if (ret < 0) {
+            std.debug.print("{d}\n", .{ret});
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
+        }
+    }
+
     /// Create a vCPU with the specified ID.
     pub fn create_vcpu(fd: vm_fd_t, cpuid: usize) !vcpu_fd_t {
         const ret = ioctl(

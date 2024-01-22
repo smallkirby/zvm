@@ -29,7 +29,7 @@ const VM = struct {
     page_allocator: std.mem.Allocator,
     /// Memory allocator used by the VMM for internal use
     general_allocator: std.mem.Allocator,
-    /// Guest physical memory
+    /// Guest physical memory.
     guest_mem: []u8,
 
     pub const VMOption = struct {
@@ -77,6 +77,12 @@ const VM = struct {
             option.page_allocator,
         );
         self.guest_mem = user_mem;
+
+        // Setup TSS
+        try self.setup_tss();
+
+        // Setup identity map
+        try self.setup_identity_map();
 
         // Create vCPUs
         // TODO: num of vCPUs should be configurable
@@ -151,6 +157,38 @@ const VM = struct {
         if (api_version != 12) {
             return VMError.ApiIncompatible;
         }
+    }
+
+    /// Register 3 pages of TSS (task state segmet) right after the guest physical memory.
+    /// The region is hidden from VM itself,
+    /// but needed for the guest to emulate real-mode.
+    /// ref: https://lwn.net/Articles/658511/
+    fn setup_tss(self: *@This()) !void {
+        // The region must within the first 4GB.
+        // We assume that the guest physical memory is less than 4GB - 4 pages.
+        if (self.guest_mem.len >= 0x1_0000_0000 - 0x1000 * 4) {
+            return VMError.GMemNotEnough;
+        }
+
+        try kvm.vm.set_tss_addr(self.vm_fd, self.guest_mem.len);
+    }
+
+    /// Register 1 page of identity map right after TSS.
+    /// The region is hidden from VM itself.
+    /// This function must be called before any vCPU is created.
+    fn setup_identity_map(self: *@This()) !void {
+        // The region must within the first 4GB.
+        // We assume that the guest physical memory is less than 4GB - 4 pages.
+        if (self.guest_mem.len >= 0x1_0000_0000 - 0x1000 * 4) {
+            return VMError.GMemNotEnough;
+        }
+
+        // This function must be called before any vCPU is created.
+        if (self.vcpus.len != 0) {
+            return VMError.NotReady;
+        }
+
+        try kvm.vm.set_identity_map_addr(self.vm_fd, self.guest_mem.len + 0x1000 * 3);
     }
 
     /// Deinitialize the VM and corresponding vCPUs.
