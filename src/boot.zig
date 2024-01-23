@@ -20,22 +20,31 @@ pub const SetupHeader = extern struct {
     realmode_swtch: u32 align(1),
     start_sys_seg: u16 align(1),
     kernel_version: u16 align(1),
+    /// M. The type of loader. Specify 0xFF if no ID is assigned.
     type_of_loader: u8 align(1),
-    loadflags: u8 align(1),
+    /// M. Bitmask.
+    loadflags: LoadflagBitfield align(1),
     setup_move_size: u16 align(1),
     code32_start: u32 align(1),
+    /// M. The 32-bit linear address of initial ramdisk or ramfs.
+    /// Specify 0 if there is no ramdisk or ramfs.
     ramdisk_image: u32 align(1),
+    /// M. The size of the initial ramdisk or ramfs.
     ramdisk_size: u32 align(1),
     bootsect_kludge: u32 align(1),
+    /// W. Offset of the end of the setup/heap minus 0x200.
     heap_end_ptr: u16 align(1),
+    /// W(opt). Extension of the loader ID.
     ext_loader_ver: u8 align(1),
     ext_loader_type: u8 align(1),
+    /// W. The 32-bit linear address of the kernel command line.
     cmd_line_ptr: u32 align(1),
     initrd_addr_max: u32 align(1),
     kernel_alignment: u32 align(1),
     relocatable_kernel: u8 align(1),
     min_alignment: u8 align(1),
     xloadflags: u16 align(1),
+    /// R. Maximum size of the cmdline.
     cmdline_size: u32 align(1),
     hardware_subarch: u32 align(1),
     hardware_subarch_data: u64 align(1),
@@ -46,6 +55,26 @@ pub const SetupHeader = extern struct {
     init_size: u32 align(1),
     handover_offset: u32 align(1),
     kernel_info_offset: u32 align(1),
+
+    /// Bitfield for loadflags.
+    const LoadflagBitfield = packed struct(u8) {
+        /// If true, the protected-mode code is loaded at 0x100000.
+        LOADED_HIGH: bool = false,
+        /// If true, KASLR enabled.
+        KASLR_FLAG: bool = false,
+        _unused: u3 = 0,
+        /// If false, print early messages.
+        QUIET_FLAG: bool = false,
+        /// If false, reload the segment registers in the 32bit entry point.
+        KEEP_SEGMENTS: bool = false,
+        /// Set true to indicate that the value entered in the `heap_end_ptr` is valid.
+        CAN_USE_HEAP: bool = false,
+
+        /// Convert to u8.
+        pub fn to_u8(self: @This()) u8 {
+            return @bitCast(self);
+        }
+    };
 
     /// The offset where the header starts in the bzImage.
     pub const HeaderOffset = 0x1F1;
@@ -79,6 +108,13 @@ pub const SetupHeader = extern struct {
             "{d}.{d}",
             .{ major, minor },
         );
+    }
+
+    /// Get the offset of the protected-mode kernel code.
+    /// Real-mode code consists of the boot sector (1 sector == 512 bytes)
+    /// plus the setup code (`setup_sects` sectors).
+    pub fn get_protected_code_offset(self: @This()) usize {
+        return (@as(usize, self.setup_sects) + 1) * 512;
     }
 };
 
@@ -148,6 +184,14 @@ test "boot_params compatibility" {
     try expect(@offsetOf(BootParams, "edd_mbr_sig_buf_entries") == 0x1EA);
     try expect(@offsetOf(BootParams, "hdr") == offset);
     try expect(@offsetOf(BootParams, "_edd_mbr_sig_buffer") == 0x290);
+}
+
+test "loadflags compatibility" {
+    var loadflags = SetupHeader.LoadflagBitfield{};
+
+    loadflags.LOADED_HIGH = true;
+    loadflags.KEEP_SEGMENTS = true;
+    try expect(loadflags.to_u8() == 0b0100_0001);
 }
 
 test "load header" {

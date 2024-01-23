@@ -3,6 +3,7 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
 const consts = @import("consts.zig");
+const boot = @import("boot.zig");
 const builtin = @import("builtin");
 const linux = std.os.linux;
 const c = @cImport({
@@ -258,6 +259,46 @@ const VM = struct {
         }
     }
 
+    /// Load a protected kernel image and cmdline to the guest physical memory.
+    pub fn load_kernel(self: *@This(), kernel: []u8) !void {
+        if (self.guest_mem.len < 1 * consts.units.GB) {
+            return VMError.GMemNotEnough;
+        }
+
+        var boot_params = boot.BootParams.from_bytes(kernel);
+
+        // setup necessary fields
+        boot_params.hdr.type_of_loader = 0xFF;
+        boot_params.hdr.ramdisk_image = 0; // TODO: option to use ramfs
+        boot_params.hdr.loadflags.LOADED_HIGH = true;
+        boot_params.hdr.loadflags.CAN_USE_HEAP = true;
+        boot_params.hdr.loadflags.KEEP_SEGMENTS = true;
+        boot_params.hdr.heap_end_ptr = consts.layout.BOOTPARAM - 0x200;
+        boot_params.hdr.cmd_line_ptr = consts.layout.CMDLINE;
+
+        // setup cmdline
+        const cmdline = self.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + boot_params.hdr.cmdline_size];
+        const cmdline_val = "console=ttyS0";
+        @memset(cmdline, 0);
+        @memcpy(cmdline[0..cmdline_val.len], cmdline_val);
+
+        // copy boot_params
+        std.mem.copy(
+            u8,
+            self.guest_mem[consts.layout.BOOTPARAM .. consts.layout.BOOTPARAM + @sizeOf(boot.BootParams)],
+            kernel[0..@sizeOf(boot.BootParams)],
+        );
+
+        // load protected-mode kernel code
+        const code_offset = boot_params.hdr.get_protected_code_offset();
+        const code_size = kernel.len - code_offset;
+        std.mem.copy(
+            u8,
+            self.guest_mem[consts.layout.KERNEL_BASE .. consts.layout.KERNEL_BASE + code_size],
+            kernel[code_offset..],
+        );
+    }
+
     /// Deinitialize the VM and corresponding vCPUs.
     /// Caller must defer this function after initializing the VM.
     pub fn deinit(self: @This()) void {
@@ -360,4 +401,38 @@ test "Run simple assembly" {
             },
         }
     }
+}
+
+test "Load dummy kernel" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // instantiate VM
+    var vm = try VM.new();
+    defer _ = vm.deinit();
+
+    // initialize VM
+    try vm.init(.{
+        .page_allocator = std.heap.page_allocator,
+        .general_allocator = allocator,
+        .mem_size_bytes = 1 * consts.units.GB,
+    });
+
+    // read kernel image
+    const file = try std.fs.cwd().openFile(
+        "test/assets/bzImage",
+        .{ .mode = .read_only },
+    );
+    const buf = try allocator.alloc(u8, (try file.stat()).size);
+    defer allocator.free(buf);
+    _ = try file.readAll(buf);
+
+    // load kernel image
+    try vm.load_kernel(buf);
+
+    // check if cmdline is set correctly
+    const cmdline = vm.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + 0x100];
+    const p_cmdline = std.mem.span(@as([*:0]u8, @ptrCast(cmdline.ptr)));
+    try expect(std.mem.eql(u8, p_cmdline, "console=ttyS0"));
 }
