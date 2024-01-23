@@ -4,55 +4,55 @@ const std = @import("std");
 
 /// Representation of the linux kernel header.
 /// This header compiles with protocol v2.15.
-const KernelHeader = packed struct {
+pub const SetupHeader = extern struct {
     /// RO. The number of setup sectors.
-    setup_sects: u8,
-    root_flags: u16,
-    syssize: u32,
-    ram_size: u16,
-    vid_mode: u16,
-    root_dev: u16,
-    boot_flag: u16,
-    jump: u16,
-    header: u32,
+    setup_sects: u8 align(1),
+    root_flags: u16 align(1),
+    syssize: u32 align(1),
+    ram_size: u16 align(1),
+    vid_mode: u16 align(1),
+    root_dev: u16 align(1),
+    boot_flag: u16 align(1),
+    jump: u16 align(1),
+    header: u32 align(1),
     /// RO. Boot protocol version supported.
-    version: u16,
-    realmode_swtch: u32,
-    start_sys_seg: u16,
-    kernel_version: u16,
-    type_of_loader: u8,
-    loadflags: u8,
-    setup_move_size: u16,
-    code32_start: u32,
-    ramdisk_image: u32,
-    ramdisk_size: u32,
-    bootsect_kludge: u32,
-    heap_end_ptr: u16,
-    ext_loader_ver: u8,
-    ext_loader_type: u8,
-    cmd_line_ptr: u32,
-    initrd_addr_max: u32,
-    kernel_alignment: u32,
-    relocatable_kernel: u8,
-    min_alignment: u8,
-    xloadflags: u16,
-    cmdline_size: u32,
-    hardware_subarch: u32,
-    hardware_subarch_data: u64,
-    payload_offset: u32,
-    payload_length: u32,
-    setup_data: u64,
-    pref_address: u64,
-    init_size: u32,
-    handover_offset: u32,
-    kernel_info_offset: u32,
+    version: u16 align(1),
+    realmode_swtch: u32 align(1),
+    start_sys_seg: u16 align(1),
+    kernel_version: u16 align(1),
+    type_of_loader: u8 align(1),
+    loadflags: u8 align(1),
+    setup_move_size: u16 align(1),
+    code32_start: u32 align(1),
+    ramdisk_image: u32 align(1),
+    ramdisk_size: u32 align(1),
+    bootsect_kludge: u32 align(1),
+    heap_end_ptr: u16 align(1),
+    ext_loader_ver: u8 align(1),
+    ext_loader_type: u8 align(1),
+    cmd_line_ptr: u32 align(1),
+    initrd_addr_max: u32 align(1),
+    kernel_alignment: u32 align(1),
+    relocatable_kernel: u8 align(1),
+    min_alignment: u8 align(1),
+    xloadflags: u16 align(1),
+    cmdline_size: u32 align(1),
+    hardware_subarch: u32 align(1),
+    hardware_subarch_data: u64 align(1),
+    payload_offset: u32 align(1),
+    payload_length: u32 align(1),
+    setup_data: u64 align(1),
+    pref_address: u64 align(1),
+    init_size: u32 align(1),
+    handover_offset: u32 align(1),
+    kernel_info_offset: u32 align(1),
 
     /// The offset where the header starts in the bzImage.
     pub const HeaderOffset = 0x1F1;
 
     comptime {
-        if (@sizeOf(@This()) != 128) {
-            @compileError("Unexpected kernel header size");
+        if (@sizeOf(@This()) != 0x7B) {
+            @compileError("Unexpected SetupHeader size");
         }
     }
 
@@ -82,15 +82,72 @@ const KernelHeader = packed struct {
     }
 };
 
+/// Port of struct boot_params in linux kernel.
+/// Note that fields prefixed with `_` are not implemented and have incorrect types.
+pub const BootParams = extern struct {
+    _screen_info: [0x40]u8 align(1),
+    _apm_bios_info: [0x14]u8 align(1),
+    _pad2: [4]u8 align(1),
+    tboot_addr: u64 align(1),
+    ist_info: [0x10]u8 align(1),
+    _pad3: [0x10]u8 align(1),
+    hd0_info: [0x10]u8 align(1),
+    hd1_info: [0x10]u8 align(1),
+    _sys_desc_table: [0x10]u8 align(1),
+    _olpc_ofw_header: [0x10]u8 align(1),
+    _pad4: [0x80]u8 align(1),
+    _edid_info: [0x80]u8 align(1),
+    _efi_info: [0x20]u8 align(1),
+    alt_mem_k: u32 align(1),
+    scratch: u32 align(1),
+    e820_entries: u8 align(1),
+    eddbuf_entries: u8 align(1),
+    edd_mbr_sig_buf_entries: u8 align(1),
+    kbd_status: u8 align(1),
+    _pad6: [5]u8 align(1),
+    hdr: SetupHeader,
+    _pad7: [0x290 - SetupHeader.HeaderOffset - @sizeOf(SetupHeader)]u8 align(1),
+    _edd_mbr_sig_buffer: [0x10]u32 align(1),
+    _unimplemented: [0xD30]u8 align(1),
+
+    comptime {
+        if (@sizeOf(@This()) != 0x1000) {
+            @compileError("Unexpected BootParams size");
+        }
+    }
+
+    /// Instantiate a boot params from bzImage.
+    pub fn from_bytes(bytes: []u8) @This() {
+        return std.mem.bytesToValue(
+            @This(),
+            bytes[0..@sizeOf(@This())],
+        );
+    }
+};
+
 // =================================== //
 
 const expect = std.testing.expect;
 
 test "header compatibility" {
-    const offset = KernelHeader.HeaderOffset;
-    try expect(@offsetOf(KernelHeader, "setup_sects") == 0);
-    try expect(@offsetOf(KernelHeader, "loadflags") == 0x0211 - offset);
-    try expect(@offsetOf(KernelHeader, "initrd_addr_max") == 0x022C - offset);
+    const offset = SetupHeader.HeaderOffset;
+    try expect(@offsetOf(SetupHeader, "setup_sects") == 0);
+    try expect(@offsetOf(SetupHeader, "root_flags") == 0x1F2 - offset);
+    try expect(@offsetOf(SetupHeader, "syssize") == 0x01F4 - offset);
+    try expect(@offsetOf(SetupHeader, "jump") == 0x0200 - offset);
+    try expect(@offsetOf(SetupHeader, "loadflags") == 0x0211 - offset);
+    try expect(@offsetOf(SetupHeader, "initrd_addr_max") == 0x022C - offset);
+}
+
+test "boot_params compatibility" {
+    const offset = SetupHeader.HeaderOffset;
+    try expect(@offsetOf(BootParams, "hd1_info") == 0x090);
+    try expect(@offsetOf(BootParams, "_efi_info") == 0x1C0);
+    try expect(@offsetOf(BootParams, "e820_entries") == 0x1E8);
+    try expect(@offsetOf(BootParams, "eddbuf_entries") == 0x1E9);
+    try expect(@offsetOf(BootParams, "edd_mbr_sig_buf_entries") == 0x1EA);
+    try expect(@offsetOf(BootParams, "hdr") == offset);
+    try expect(@offsetOf(BootParams, "_edd_mbr_sig_buffer") == 0x290);
 }
 
 test "load header" {
@@ -106,11 +163,36 @@ test "load header" {
     defer allocator.free(buf);
     _ = try file.readAll(buf);
 
-    var hdr = KernelHeader.from_bytes(buf);
+    var hdr = SetupHeader.from_bytes(buf);
     const vstr = try hdr.get_version_string(allocator);
     defer allocator.free(vstr);
 
     try expect(std.mem.eql(u8, vstr, "2.15"));
     try expect(hdr.setup_sects == 0x1B);
     try expect(hdr.init_size == 0x014AF000);
+}
+
+test "load boot_params" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const file = try std.fs.cwd().openFile(
+        "test/assets/kheader.bin",
+        .{ .mode = .read_only },
+    );
+    const buf = try allocator.alloc(u8, (try file.stat()).size);
+    defer allocator.free(buf);
+    _ = try file.readAll(buf);
+
+    var hdr = SetupHeader.from_bytes(buf);
+    var params = BootParams.from_bytes(buf);
+    try expect(params.hdr.setup_sects == hdr.setup_sects);
+    try expect(params.hdr.init_size == hdr.init_size);
+
+    const v1 = try params.hdr.get_version_string(allocator);
+    const v2 = try hdr.get_version_string(allocator);
+    defer allocator.free(v1);
+    defer allocator.free(v2);
+    try expect(std.mem.eql(u8, v1, v2));
 }
