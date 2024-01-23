@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const kvm = @import("kvm.zig");
+const consts = @import("consts.zig");
 const builtin = @import("builtin");
 const linux = std.os.linux;
 const c = @cImport({
@@ -101,6 +102,7 @@ const VM = struct {
     }
 
     /// Clear all segment registers of all vCPUs
+    /// TODO: conflicting with `init_protected_mode`. Remove this?
     pub fn clear_segment_registers(self: *@This()) !void {
         if (self.vcpus.len == 0) {
             return VMError.NotReady;
@@ -175,7 +177,7 @@ const VM = struct {
     fn setup_tss(self: *@This()) !void {
         // The region must within the first 4GB.
         // We assume that the guest physical memory is less than 4GB - 4 pages.
-        if (self.guest_mem.len >= 0x1_0000_0000 - 0x1000 * 4) {
+        if (self.guest_mem.len >= 0x1_0000_0000 - consts.x64.PAGE_SIZE * 4) {
             return VMError.GMemNotEnough;
         }
 
@@ -188,7 +190,7 @@ const VM = struct {
     fn setup_identity_map(self: *@This()) !void {
         // The region must within the first 4GB.
         // We assume that the guest physical memory is less than 4GB - 4 pages.
-        if (self.guest_mem.len >= 0x1_0000_0000 - 0x1000 * 4) {
+        if (self.guest_mem.len >= 0x1_0000_0000 - consts.x64.PAGE_SIZE * 4) {
             return VMError.GMemNotEnough;
         }
 
@@ -197,7 +199,10 @@ const VM = struct {
             return VMError.NotReady;
         }
 
-        try kvm.vm.set_identity_map_addr(self.vm_fd, self.guest_mem.len + 0x1000 * 3);
+        try kvm.vm.set_identity_map_addr(
+            self.vm_fd,
+            self.guest_mem.len + consts.x64.PAGE_SIZE * 3,
+        );
     }
 
     /// Create an interrupt controller model
@@ -312,7 +317,7 @@ test "Run simple assembly" {
     try vm.init(.{
         .page_allocator = std.heap.page_allocator,
         .general_allocator = gpa.allocator(),
-        .mem_size_bytes = 0x10000,
+        .mem_size_bytes = consts.x64.PAGE_SIZE * 0x10,
     });
     try vm.clear_segment_registers();
 
