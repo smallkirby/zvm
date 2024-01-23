@@ -98,6 +98,9 @@ const VM = struct {
         vcpus[0] = try VCPU.new(self.kvm_fd, self.vm_fd, 0);
         self.vcpus = vcpus;
 
+        // Set CPUID
+        try self.init_cpuid();
+
         // Init protected mode
         try self.init_protected_mode();
     }
@@ -278,25 +281,55 @@ const VM = struct {
 
         // setup cmdline
         const cmdline = self.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + boot_params.hdr.cmdline_size];
-        const cmdline_val = "console=ttyS0";
+        const cmdline_val = "console=ttyS0"; // TODO: make configurable
         @memset(cmdline, 0);
         @memcpy(cmdline[0..cmdline_val.len], cmdline_val);
 
         // copy boot_params
-        std.mem.copy(
-            u8,
-            self.guest_mem[consts.layout.BOOTPARAM .. consts.layout.BOOTPARAM + @sizeOf(boot.BootParams)],
-            kernel[0..@sizeOf(boot.BootParams)],
-        );
+        try self.load_image(kernel[0..@sizeOf(boot.BootParams)], consts.layout.BOOTPARAM);
 
         // load protected-mode kernel code
         const code_offset = boot_params.hdr.get_protected_code_offset();
         const code_size = kernel.len - code_offset;
-        std.mem.copy(
-            u8,
-            self.guest_mem[consts.layout.KERNEL_BASE .. consts.layout.KERNEL_BASE + code_size],
-            kernel[code_offset..],
+        try self.load_image(
+            kernel[code_offset .. code_offset + code_size],
+            consts.layout.KERNEL_BASE,
         );
+
+        // set registers
+        var regs = try self.get_regs(0); // TODO: which vCPU?
+        regs.rflags = 0x2;
+        regs.rip = consts.layout.KERNEL_BASE;
+        regs.rsi = consts.layout.BOOTPARAM;
+        try self.set_regs(0, regs);
+    }
+
+    /// Initialize CPUID.
+    /// This function set the response of CPUID_SIGNATURE to "ZVM".
+    fn init_cpuid(self: *@This()) !void {
+        var cpuid = try kvm.system.get_supported_cpuid(self.kvm_fd);
+
+        var set = false;
+        for (0..cpuid.nent) |i| {
+            var entry = &cpuid.entries[i];
+            switch (entry.function) {
+                consts.kvm.KVM_CPUID_SIGNATURE => {
+                    entry.eax = 0x004D565A; // "ZVM"
+                    entry.ebx = 0x00000000;
+                    entry.ecx = 0x00000000;
+                    entry.edx = 0x00000000;
+                    set = true;
+                },
+                else => {},
+            }
+        }
+        if (!set) {
+            return VMError.NotReady;
+        }
+
+        for (self.vcpus) |*vcpu| {
+            try kvm.vcpu.set_cpuid(vcpu.vcpu_fd, &cpuid);
+        }
     }
 
     /// Deinitialize the VM and corresponding vCPUs.
@@ -403,7 +436,7 @@ test "Run simple assembly" {
     }
 }
 
-test "Load dummy kernel" {
+test "Load dummy kernel & Set CPUID" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -435,4 +468,21 @@ test "Load dummy kernel" {
     const cmdline = vm.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + 0x100];
     const p_cmdline = std.mem.span(@as([*:0]u8, @ptrCast(cmdline.ptr)));
     try expect(std.mem.eql(u8, p_cmdline, "console=ttyS0"));
+
+    // check if CPUID is set correctly
+    const cpuid = try kvm.vcpu.get_cpuid(vm.vcpus[0].vcpu_fd);
+    var found = false;
+    for (0..cpuid.nent) |i| {
+        var entry = &cpuid.entries[i];
+        switch (entry.function) {
+            consts.kvm.KVM_CPUID_SIGNATURE => {
+                try expect(entry.eax == 0x004D565A); // "ZVM"
+                try expect(entry.ebx == 0x00000000);
+                try expect(entry.ecx == 0x00000000);
+                try expect(entry.edx == 0x00000000);
+                found = true;
+            },
+            else => {},
+        }
+    }
 }

@@ -6,6 +6,7 @@ const linux = os.linux;
 const c = @cImport({
     @cInclude("linux/kvm.h");
     @cInclude("fcntl.h");
+    @cInclude("errno.h");
 });
 
 const fd_t = linux.fd_t;
@@ -218,6 +219,61 @@ const KvmPitConfig = extern struct {
     channels: [15]u32,
 };
 
+const KvmCpuidEntry2 = extern struct {
+    /// EAX value to obtain the entry.
+    function: u32,
+    /// ECX value to obtain the entry.
+    index: u32,
+    flags: u32,
+    eax: u32,
+    ebx: u32,
+    ecx: u32,
+    edx: u32,
+    padding: [3]u32,
+
+    comptime {
+        std.debug.assert(@bitOffsetOf(@This(), "index") == 32 * 1);
+        std.debug.assert(@bitOffsetOf(@This(), "flags") == 32 * 2);
+        std.debug.assert(@bitOffsetOf(@This(), "eax") == 32 * 3);
+        std.debug.assert(@bitOffsetOf(@This(), "ebx") == 32 * 4);
+    }
+
+    pub fn new() @This() {
+        return .{
+            .function = 0,
+            .index = 0,
+            .flags = 0,
+            .eax = 0,
+            .ebx = 0,
+            .ecx = 0,
+            .edx = 0,
+            .padding = [_]u8{0} ** 3,
+        };
+    }
+};
+
+const KvmCpuid = extern struct {
+    /// Number of the entry
+    nent: u32 align(1),
+    padding: u32 align(1) = 0,
+    entries: [NENTRIES]KvmCpuidEntry2 align(0x1),
+
+    pub const NENTRIES = 0x50; // TODO: should adjust, or repeat until correct size for each host
+
+    comptime {
+        std.debug.assert(@bitOffsetOf(@This(), "padding") == 32);
+        std.debug.assert(@bitOffsetOf(@This(), "entries") == 64);
+    }
+
+    pub fn new() @This() {
+        return .{
+            .nent = NENTRIES,
+            .padding = 0,
+            .entries = undefined,
+        };
+    }
+};
+
 /// KVM system API which qery and set global attributes of the whole KVM subsystem.
 pub const system = struct {
     /// Get a handle to the KVM subsystem.
@@ -271,6 +327,22 @@ pub const system = struct {
             return KvmError.IoctlFailed;
         } else {
             return @intCast(ret);
+        }
+    }
+
+    /// Get x86 CPUID features supported by the host.
+    /// It adjusts `nent` to the number of entries actually returned.
+    pub fn get_supported_cpuid(fd: kvm_fd_t) !KvmCpuid {
+        var cpuid = KvmCpuid.new();
+        const ret = ioctl(
+            fd,
+            c.KVM_GET_SUPPORTED_CPUID,
+            @intFromPtr(&cpuid),
+        );
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else {
+            return cpuid;
         }
     }
 };
@@ -513,6 +585,41 @@ pub const vcpu = struct {
             @ptrFromInt(addr),
         );
     }
+
+    /// Get CPUID of the vCPU.
+    pub fn get_cpuid(fd: vcpu_fd_t) !KvmCpuid {
+        var cpuid = KvmCpuid.new();
+        const ret = ioctl(
+            fd,
+            c.KVM_GET_CPUID2,
+            @intFromPtr(&cpuid),
+        );
+
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return cpuid;
+        } else {
+            unreachable;
+        }
+    }
+
+    /// Set the vCPU's CPUID, which is returned to the guest when it executes CPUID inst.
+    pub fn set_cpuid(fd: vcpu_fd_t, cpuid: *KvmCpuid) !void {
+        const ret = ioctl(
+            fd,
+            c.KVM_SET_CPUID2,
+            @intFromPtr(cpuid),
+        );
+
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
+        }
+    }
 };
 
 // =================================== //
@@ -606,4 +713,19 @@ test "Get vCPU state" {
     const map_size = try system.get_vcpu_mmap_size(fd);
     const run = try vcpu.get_vcpu_run_state(vcpu_fd, map_size);
     defer _ = linux.munmap(@ptrCast(run), map_size);
+}
+
+test "GET_SUPPORTED_CPUID" {
+    // compatibility check
+    var cpuid = KvmCpuid.new();
+    try expect(@intFromPtr(&cpuid.entries[0]) == @intFromPtr(&cpuid) + 0x8);
+    try expect(@intFromPtr(&cpuid.entries[2]) == @intFromPtr(&cpuid.entries[1]) + 0x28);
+    try expect(@sizeOf(KvmCpuid) == 0xC88);
+
+    // normal test
+    const fd = try system.open_kvm_fd();
+    defer _ = linux.close(fd);
+
+    cpuid = try system.get_supported_cpuid(fd);
+    try expect(cpuid.nent > 0);
 }

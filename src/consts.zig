@@ -23,3 +23,7 @@ pub const units = struct {
     pub const MB = 1024 * KB;
     pub const GB = 1024 * MB;
 };
+
+pub const kvm = struct {
+    pub const KVM_CPUID_SIGNATURE = 0x4000_0000;
+};
