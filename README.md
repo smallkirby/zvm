@@ -1,4 +1,6 @@
-# ZVM: experimental toy VMM backed by KVM written in Zig
+# ZVM: experimental toy VMM in Zig backed by KVM
+
+![Lint](https://github.com/smallkirby/zvm/actions/workflows/fmt.yml/badge.svg)
 
 ## Status
 
