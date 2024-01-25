@@ -211,8 +211,15 @@ pub const KvmRun = extern struct {
         },
     },
 
+    /// Get a multi-item pointer to backed bytes of this type.
+    /// Note that this cast discards the size information.
+    /// NOTE: should take `size` argument return slice?
     pub fn as_bytes(self: *@This()) [*]u8 {
-        return @as([*]u8, @ptrCast(self));
+        const tmp = @as(
+            *anyopaque,
+            @ptrCast(std.mem.asBytes(self).ptr),
+        );
+        return @as([*]u8, @ptrCast(tmp));
     }
 };
 

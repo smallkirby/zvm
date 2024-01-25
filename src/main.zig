@@ -53,9 +53,7 @@ pub fn main() !void {
                         if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
                             const size = run.uni.io.size;
                             const offset = run.uni.io.data_offset;
-                            const a = @as(*anyopaque, @ptrCast(std.mem.asBytes(run).ptr));
-                            const b = @as([*]u8, @ptrCast(a));
-                            const bytes = b[offset .. offset + size];
+                            const bytes = run.as_bytes()[offset .. offset + size];
                             std.debug.print("{s}", .{bytes});
                         }
                     },
