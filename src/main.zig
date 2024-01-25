@@ -1,11 +1,79 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
+const zvm = @import("zvm.zig");
+const consts = @import("consts.zig");
+const c = @cImport({
+    @cInclude("linux/kvm.h");
+});
 
 pub fn main() !void {
-    const fd = try kvm.system.open_kvm_fd();
-    const vm_fd = try kvm.system.create_vm(fd);
-    const vcpu_fd = try kvm.vm.create_vcpu(vm_fd, 0);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    const sregs = try kvm.vcpu.get_sregs(vcpu_fd);
-    std.debug.print("{?}\n", .{sregs});
+    // instantiate VM
+    var vm = try zvm.VM.new();
+    defer _ = vm.deinit();
+
+    // initialize VM
+    try vm.init(.{
+        .page_allocator = std.heap.page_allocator,
+        .general_allocator = allocator,
+        .mem_size_bytes = 1 * consts.units.GB,
+    });
+
+    // read kernel image
+    const file = try std.fs.cwd().openFile(
+        "bzImage", // TODO: take as cmdline argument
+        .{ .mode = .read_only },
+    );
+    const buf = try allocator.alloc(u8, (try file.stat()).size);
+    defer allocator.free(buf);
+    _ = try file.readAll(buf);
+
+    // load kernel image
+    try vm.load_kernel(buf);
+
+    // start a loop
+    while (true) {
+        try vm.run();
+        const run = vm.vcpus[0].kvm_run;
+
+        switch (run.exit_reason) {
+            c.KVM_EXIT_IO => {
+                // TODO: define constants for ports num
+                switch (run.uni.io.port) {
+                    0x61 => { // NMI
+                        if (run.uni.io.direction == c.KVM_EXIT_IO_IN) {
+                            var bytes = run.as_bytes();
+                            bytes[run.uni.io.data_offset] = 0x20;
+                        }
+                    },
+                    0x3F8 => { // VGA
+                        if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
+                            const size = run.uni.io.size;
+                            const offset = run.uni.io.data_offset;
+                            const a = @as(*anyopaque, @ptrCast(std.mem.asBytes(run).ptr));
+                            const b = @as([*]u8, @ptrCast(a));
+                            const bytes = b[offset .. offset + size];
+                            std.debug.print("{s}", .{bytes});
+                        }
+                    },
+                    0x3F8 + 5 => { // TODO: doc
+                        var bytes = run.as_bytes();
+                        bytes[run.uni.io.data_offset] = 0x20;
+                    },
+                    else => {},
+                }
+            },
+            c.KVM_EXIT_SHUTDOWN => {
+                std.log.warn("SHUTDOWN\n", .{});
+                break;
+            },
+            else => {
+                std.log.warn("EXIT_REASON: {}\n", .{run.exit_reason});
+                std.os.exit(99);
+            },
+        }
+    }
 }

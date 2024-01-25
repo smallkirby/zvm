@@ -183,6 +183,7 @@ test "boot_params compatibility" {
     try expect(@offsetOf(BootParams, "eddbuf_entries") == 0x1E9);
     try expect(@offsetOf(BootParams, "edd_mbr_sig_buf_entries") == 0x1EA);
     try expect(@offsetOf(BootParams, "hdr") == offset);
+    try expect(@bitOffsetOf(BootParams, "hdr") == offset * 8);
     try expect(@offsetOf(BootParams, "_edd_mbr_sig_buffer") == 0x290);
 }
 

@@ -8,6 +8,7 @@ const builtin = @import("builtin");
 const linux = std.os.linux;
 const c = @cImport({
     @cInclude("linux/kvm.h");
+    @cInclude("linux/kvm_para.h");
 });
 
 pub const VMError = error{
@@ -20,7 +21,7 @@ pub const VMError = error{
 };
 
 /// Instance of a VMM
-const VM = struct {
+pub const VM = struct {
     /// File descriptor for /dev/kvm
     kvm_fd: kvm.kvm_fd_t,
     /// File descriptor for the VM
@@ -55,7 +56,7 @@ const VM = struct {
         return .{
             .kvm_fd = undefined,
             .vm_fd = undefined,
-            .vcpus = undefined,
+            .vcpus = &.{},
             .page_allocator = undefined,
             .general_allocator = undefined,
             .guest_mem = undefined,
@@ -72,18 +73,10 @@ const VM = struct {
         try self.check_compatiblity();
         self.vm_fd = try kvm.system.create_vm(self.kvm_fd);
 
-        // Allocate guest physical memory
-        const user_mem = try kvm.vm.set_user_memory_region(
-            self.vm_fd,
-            option.mem_size_bytes,
-            option.page_allocator,
-        );
-        self.guest_mem = user_mem;
-
-        // Setup TSS
+        //// Setup TSS
         try self.setup_tss();
 
-        // Setup identity map
+        //// Setup identity map
         try self.setup_identity_map();
 
         // Setup interrupt controller
@@ -91,6 +84,16 @@ const VM = struct {
 
         // Setup PIT
         try self.init_pit();
+
+        // Allocate guest physical memory
+        const user_mem = try kvm.vm.set_user_memory_region(
+            self.vm_fd,
+            option.mem_size_bytes,
+            option.page_allocator,
+        );
+
+        std.debug.assert(option.mem_size_bytes == user_mem.len);
+        self.guest_mem = user_mem;
 
         // Create vCPUs
         // TODO: num of vCPUs should be configurable
@@ -126,7 +129,6 @@ const VM = struct {
             sregs.fs.base = 0;
             sregs.gs.selector = 0;
             sregs.gs.base = 0;
-            try kvm.vcpu.set_sregs(vcpu.vcpu_fd, sregs);
         }
     }
 
@@ -185,6 +187,7 @@ const VM = struct {
             return VMError.GMemNotEnough;
         }
 
+        // TODO: add to layout consts
         try kvm.vm.set_tss_addr(self.vm_fd, self.guest_mem.len);
     }
 
@@ -205,6 +208,7 @@ const VM = struct {
 
         try kvm.vm.set_identity_map_addr(
             self.vm_fd,
+            // TODO: add to layout consts
             self.guest_mem.len + consts.x64.PAGE_SIZE * 3,
         );
     }
@@ -272,12 +276,15 @@ const VM = struct {
 
         // setup necessary fields
         boot_params.hdr.type_of_loader = 0xFF;
+        boot_params.hdr.ext_loader_ver = 0;
         boot_params.hdr.ramdisk_image = 0; // TODO: option to use ramfs
-        boot_params.hdr.loadflags.LOADED_HIGH = true;
-        boot_params.hdr.loadflags.CAN_USE_HEAP = true;
-        boot_params.hdr.loadflags.KEEP_SEGMENTS = true;
+        boot_params.hdr.ramdisk_size = 0; // TODO: option to use ramfs
+        boot_params.hdr.loadflags.LOADED_HIGH = true; // load kernel at 0x10_0000
+        boot_params.hdr.loadflags.CAN_USE_HEAP = true; // use memory 0..BOOTPARAM as heap
         boot_params.hdr.heap_end_ptr = consts.layout.BOOTPARAM - 0x200;
+        boot_params.hdr.loadflags.KEEP_SEGMENTS = true; // for 32-bit boot protocol
         boot_params.hdr.cmd_line_ptr = consts.layout.CMDLINE;
+        boot_params.hdr.vid_mode = 0xFFFF; // VGA
 
         // setup cmdline
         const cmdline = self.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + boot_params.hdr.cmdline_size];
@@ -286,7 +293,7 @@ const VM = struct {
         @memcpy(cmdline[0..cmdline_val.len], cmdline_val);
 
         // copy boot_params
-        try self.load_image(kernel[0..@sizeOf(boot.BootParams)], consts.layout.BOOTPARAM);
+        try self.load_image(std.mem.asBytes(&boot_params), consts.layout.BOOTPARAM);
 
         // load protected-mode kernel code
         const code_offset = boot_params.hdr.get_protected_code_offset();
@@ -314,8 +321,8 @@ const VM = struct {
             var entry = &cpuid.entries[i];
             switch (entry.function) {
                 consts.kvm.KVM_CPUID_SIGNATURE => {
-                    entry.eax = 0x004D565A; // "ZVM"
-                    entry.ebx = 0x00000000;
+                    entry.eax = c.KVM_CPUID_FEATURES;
+                    entry.ebx = 0x004D565A; // "ZVM"
                     entry.ecx = 0x00000000;
                     entry.edx = 0x00000000;
                     set = true;
@@ -345,7 +352,7 @@ const VM = struct {
 };
 
 /// Instance of a vCPU
-const VCPU = struct {
+pub const VCPU = struct {
     /// File descriptor for the vCPU
     vcpu_fd: kvm.vcpu_fd_t,
     /// Sharad memory mapping vCPU state
@@ -476,8 +483,8 @@ test "Load dummy kernel & Set CPUID" {
         var entry = &cpuid.entries[i];
         switch (entry.function) {
             consts.kvm.KVM_CPUID_SIGNATURE => {
-                try expect(entry.eax == 0x004D565A); // "ZVM"
-                try expect(entry.ebx == 0x00000000);
+                try expect(entry.eax == c.KVM_CPUID_FEATURES); // "ZVM"
+                try expect(entry.ebx == 0x004D565A);
                 try expect(entry.ecx == 0x00000000);
                 try expect(entry.edx == 0x00000000);
                 found = true;
@@ -485,4 +492,5 @@ test "Load dummy kernel & Set CPUID" {
             else => {},
         }
     }
+    try expect(found);
 }

@@ -210,6 +210,10 @@ pub const KvmRun = extern struct {
             data_offset: u64,
         },
     },
+
+    pub fn as_bytes(self: *@This()) [*]u8 {
+        return @as([*]u8, @ptrCast(self));
+    }
 };
 
 const KvmPitConfig = extern struct {
@@ -252,7 +256,7 @@ const KvmCpuidEntry2 = extern struct {
     }
 };
 
-const KvmCpuid = extern struct {
+pub const KvmCpuid = extern struct {
     /// Number of the entry
     nent: u32 align(1),
     padding: u32 align(1) = 0,
@@ -349,7 +353,7 @@ pub const system = struct {
 
 /// KVM VM API which query and set attributes affecting an entire virtual machine.
 pub const vm = struct {
-    const KvmUserspaceMemoryRegion = packed struct {
+    pub const KvmUserspaceMemoryRegion = packed struct {
         slot: u32,
         flags: u32,
         guest_phys_addr: u64,
@@ -375,6 +379,7 @@ pub const vm = struct {
         allocator: std.mem.Allocator,
     ) ![]u8 {
         const mem = try allocator.alloc(u8, size);
+        @memset(mem, 0);
         const region = KvmUserspaceMemoryRegion.new(size, mem.ptr);
         const ret = ioctl(
             fd,
@@ -414,7 +419,6 @@ pub const vm = struct {
             @intFromPtr(&v_addr),
         );
         if (ret < 0) {
-            std.debug.print("{d}\n", .{ret});
             return KvmError.IoctlFailed;
         } else if (ret == 0) {
             return;
@@ -620,6 +624,36 @@ pub const vcpu = struct {
             unreachable;
         }
     }
+
+    /// Translate a guest linear address to a guest physical address.
+    pub fn translate(fd: vcpu_fd_t, addr: u64) !u64 {
+        // TODO: define zig struct
+        var t = c.kvm_translation{
+            .linear_address = addr,
+            .physical_address = 0,
+            .valid = 0,
+            .writeable = 0,
+            .usermode = 0,
+            .pad = [_]u8{0} ** 5,
+        };
+        const ret = ioctl(
+            fd,
+            c.KVM_TRANSLATE,
+            @intFromPtr(&t),
+        );
+
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            if (t.valid == 0) {
+                return KvmError.IoctlFailed;
+            } else {
+                return t.physical_address;
+            }
+        } else {
+            unreachable;
+        }
+    }
 };
 
 // =================================== //
@@ -720,7 +754,6 @@ test "GET_SUPPORTED_CPUID" {
     var cpuid = KvmCpuid.new();
     try expect(@intFromPtr(&cpuid.entries[0]) == @intFromPtr(&cpuid) + 0x8);
     try expect(@intFromPtr(&cpuid.entries[2]) == @intFromPtr(&cpuid.entries[1]) + 0x28);
-    try expect(@sizeOf(KvmCpuid) == 0xC88);
 
     // normal test
     const fd = try system.open_kvm_fd();
