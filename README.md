@@ -1,4 +1,4 @@
-# ZVM
+# ZVM: experimental toy VMM backed by KVM written in Zig
 
 ## Status
 
