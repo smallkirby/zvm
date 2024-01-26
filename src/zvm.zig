@@ -271,7 +271,7 @@ pub const VM = struct {
         if (self.guest_mem.len < 1 * consts.units.GB) {
             return VMError.GMemNotEnough;
         }
-        if (kernel.len > consts.layout.INITRD - consts.layout.KERNEL_BASE) {
+        if (kernel.len > self.guest_mem.len - consts.layout.KERNEL_BASE) {
             return VMError.GMemNotEnough;
         }
 
@@ -286,6 +286,14 @@ pub const VM = struct {
         boot_params.hdr.loadflags.KEEP_SEGMENTS = true; // for 32-bit boot protocol
         boot_params.hdr.cmd_line_ptr = consts.layout.CMDLINE;
         boot_params.hdr.vid_mode = 0xFFFF; // VGA
+
+        // setup E820 map
+        boot_params.add_e820_entry(0, consts.layout.KERNEL_BASE, .RAM);
+        boot_params.add_e820_entry(
+            consts.layout.KERNEL_BASE,
+            self.guest_mem.len - consts.layout.KERNEL_BASE,
+            .RAM,
+        );
 
         // load initrd
         try self.load_initrd(initrd, &boot_params);
@@ -321,13 +329,12 @@ pub const VM = struct {
         initrd: []u8,
         boot_params: *boot.BootParams,
     ) !void {
-        if (consts.layout.INITRD_MAX - consts.layout.INITRD < initrd.len) {
+        if (self.guest_mem.len - consts.layout.INITRD < initrd.len) {
+            // initrd is larger than reserved space
             return VMError.GMemNotEnough;
         }
-        if (consts.layout.INITRD_MAX > self.guest_mem.len) {
-            return VMError.GMemNotEnough;
-        }
-        if (boot_params.hdr.initrd_addr_max < consts.layout.INITRD_MAX) {
+        if (boot_params.hdr.initrd_addr_max < consts.layout.INITRD + initrd.len) {
+            // initrd's loaded addr exceeds the limit of the specified addr
             return VMError.GMemNotEnough; // TODO: appropriate error
         }
 
@@ -335,9 +342,9 @@ pub const VM = struct {
             boot_params.hdr.ramdisk_image = 0;
             boot_params.hdr.ramdisk_size = 0;
         } else {
-            try self.load_image(initrd, consts.layout.INITRD);
             boot_params.hdr.ramdisk_image = consts.layout.INITRD;
             boot_params.hdr.ramdisk_size = @truncate(initrd.len);
+            try self.load_image(initrd, consts.layout.INITRD);
         }
     }
 

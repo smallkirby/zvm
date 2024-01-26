@@ -119,9 +119,35 @@ pub const SetupHeader = extern struct {
     }
 };
 
+pub const E820Entry = extern struct {
+    addr: u64 align(1),
+    size: u64 align(1),
+    type: Type align(1),
+
+    pub const Type = enum(u32) {
+        /// RAM.
+        RAM = 1,
+        /// Reserved.
+        RESERVED = 2,
+        /// ACPI reclaimable memory.
+        ACPI = 3,
+        /// ACPI NVS memory.
+        NVS = 4,
+        /// Unusable memory region.
+        UNUSABLE = 5,
+    };
+
+    comptime {
+        std.debug.assert(@bitSizeOf(@This()) == 0x14 * 8);
+    }
+};
+
 /// Port of struct boot_params in linux kernel.
 /// Note that fields prefixed with `_` are not implemented and have incorrect types.
 pub const BootParams = extern struct {
+    /// Maximum number of entries in the E820 map.
+    const E280MAX = 128;
+
     _screen_info: [0x40]u8 align(1),
     _apm_bios_info: [0x14]u8 align(1),
     _pad2: [4]u8 align(1),
@@ -137,15 +163,19 @@ pub const BootParams = extern struct {
     _efi_info: [0x20]u8 align(1),
     alt_mem_k: u32 align(1),
     scratch: u32 align(1),
+    /// Number of entries in the E820 map.
     e820_entries: u8 align(1),
     eddbuf_entries: u8 align(1),
     edd_mbr_sig_buf_entries: u8 align(1),
     kbd_status: u8 align(1),
     _pad6: [5]u8 align(1),
+    /// Setup header.
     hdr: SetupHeader,
     _pad7: [0x290 - SetupHeader.HeaderOffset - @sizeOf(SetupHeader)]u8 align(1),
     _edd_mbr_sig_buffer: [0x10]u32 align(1),
-    _unimplemented: [0xD30]u8 align(1),
+    /// System memory map that can be retrieved by INT 15, E820h.
+    e820_map: [E280MAX]E820Entry align(1),
+    _unimplemented: [0x330]u8 align(1), // TODO: implement this.
 
     comptime {
         if (@sizeOf(@This()) != 0x1000) {
@@ -159,6 +189,19 @@ pub const BootParams = extern struct {
             @This(),
             bytes[0..@sizeOf(@This())],
         );
+    }
+
+    /// Add an entry to the E820 map.
+    pub fn add_e820_entry(
+        self: *@This(),
+        addr: u64,
+        size: u64,
+        type_: E820Entry.Type,
+    ) void {
+        self.e820_map[self.e820_entries].addr = addr;
+        self.e820_map[self.e820_entries].size = size;
+        self.e820_map[self.e820_entries].type = type_;
+        self.e820_entries += 1;
     }
 };
 

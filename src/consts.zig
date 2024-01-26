@@ -16,10 +16,7 @@ pub const layout = struct {
     /// Where the protected-mode kernel code is loaded
     pub const KERNEL_BASE = 0x0010_0000;
     /// Where the initial ramdisk is loaded.
-    /// TODO: should adjust depending on the given memory size.
-    pub const INITRD = 0x00A0_0000;
-    /// Available highest address of the initial ramdisk.
-    pub const INITRD_MAX = 0x0100_0000;
+    pub const INITRD = 0x3000_0000;
 };
 
 pub const units = struct {
