@@ -66,6 +66,11 @@ pub fn main() !void {
             },
             c.KVM_EXIT_SHUTDOWN => {
                 std.log.warn("SHUTDOWN\n", .{});
+
+                const regs = try vm.get_regs(0);
+                regs.debug_print();
+                try vm.print_stacktrace();
+
                 break;
             },
             else => {

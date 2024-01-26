@@ -189,6 +189,27 @@ pub const KvmRegs = extern struct {
             .rflags = undefined,
         };
     }
+
+    pub fn debug_print(self: @This()) void {
+        std.debug.print("RAX: 0x{X:0>16}\n", .{self.rax});
+        std.debug.print("RBX: 0x{X:0>16}\n", .{self.rbx});
+        std.debug.print("RCX: 0x{X:0>16}\n", .{self.rcx});
+        std.debug.print("RDX: 0x{X:0>16}\n", .{self.rdx});
+        std.debug.print("RSI: 0x{X:0>16}\n", .{self.rsi});
+        std.debug.print("RDI: 0x{X:0>16}\n", .{self.rdi});
+        std.debug.print("RSP: 0x{X:0>16}\n", .{self.rsp});
+        std.debug.print("RBP: 0x{X:0>16}\n", .{self.rbp});
+        std.debug.print("R8:  0x{X:0>16}\n", .{self.r8});
+        std.debug.print("R9:  0x{X:0>16}\n", .{self.r9});
+        std.debug.print("R10: 0x{X:0>16}\n", .{self.r10});
+        std.debug.print("R11: 0x{X:0>16}\n", .{self.r11});
+        std.debug.print("R12: 0x{X:0>16}\n", .{self.r12});
+        std.debug.print("R13: 0x{X:0>16}\n", .{self.r13});
+        std.debug.print("R14: 0x{X:0>16}\n", .{self.r14});
+        std.debug.print("R15: 0x{X:0>16}\n", .{self.r15});
+        std.debug.print("RIP: 0x{X:0>16}\n", .{self.rip});
+        std.debug.print("RFLAGS: 0x{X:0>16}\n", .{self.rflags});
+    }
 };
 
 pub const KvmRun = extern struct {

@@ -312,7 +312,7 @@ pub const VM = struct {
     }
 
     /// Initialize CPUID.
-    /// This function set the response of CPUID_SIGNATURE to "ZVM".
+    /// This function set the response of CPUID_SIGNATURE to the KVM signature.
     fn init_cpuid(self: *@This()) !void {
         var cpuid = try kvm.system.get_supported_cpuid(self.kvm_fd);
 
@@ -322,10 +322,18 @@ pub const VM = struct {
             switch (entry.function) {
                 consts.kvm.KVM_CPUID_SIGNATURE => {
                     entry.eax = c.KVM_CPUID_FEATURES;
-                    entry.ebx = 0x004D565A; // "ZVM"
-                    entry.ecx = 0x00000000;
-                    entry.edx = 0x00000000;
+                    // This ID is defined by Linux. We cannot choose arbitrary value.
+                    entry.ebx = 0x4B4D564B; // "KVMK"
+                    entry.ecx = 0x564B4D56; // "VMKV"
+                    entry.edx = 0x0000004D; // "M\x00\x00\x00"
                     set = true;
+                },
+                7 => {
+                    // HACK
+                    // This is a dirty workaround for a Intel FSRM alternative instructions.
+                    // This oneline code disables the alternative instructions.
+                    // Refer to [/hacks/FSRM.md] for more details.
+                    entry.edx &= ~(@as(u32, 1) << 4); // X86_FEATURE_FSRM
                 },
                 else => {},
             }
@@ -337,6 +345,47 @@ pub const VM = struct {
         for (self.vcpus) |*vcpu| {
             try kvm.vcpu.set_cpuid(vcpu.vcpu_fd, &cpuid);
         }
+    }
+
+    /// Print a stacktrace.
+    /// This function is for debugging purpose.
+    /// XXX: not implemented
+    pub fn print_stacktrace(self: *@This()) !void {
+        // TODO: multi-core support
+        const regs = try self.get_regs(0);
+        const FALLBACK_KBASE = 0xFFFFFFFF80000000; // TODO: KASLR support
+        const mem = self.guest_mem;
+
+        var rsp: u64 = regs.rsp;
+        var rbp: u64 = regs.rbp;
+        var rip: u64 = regs.rip;
+        var i: usize = 0;
+        while (true) : (i += 1) {
+            if (rbp % 8 != 0 or rsp % 8 != 0) {
+                std.log.err(
+                    "Invalid RSP or RBP alignment: RSP=0x{X:0>16} RBP=0x{X:0>16}",
+                    .{ rsp, rbp },
+                );
+                std.log.err("Stacktrace aborted.", .{});
+                return;
+            }
+
+            std.debug.print("#{d:0>3}: ", .{i});
+            std.debug.print("0x{X:0>16} ", .{rip});
+            const b = try self.translate_with_fallback(rbp, FALLBACK_KBASE);
+            rsp = rbp + 0x10;
+            rip = @as(*u64, @ptrCast(@alignCast(mem[b + 8 .. b + 0x10].ptr))).*;
+            rbp = @as(*u64, @ptrCast(@alignCast(mem[b + 0 .. b + 8].ptr))).*;
+            std.os.exit(0); // XXX
+        }
+    }
+
+    /// Translate guest virtual address to guest physical address.
+    /// If the translation fails, it uses the given fallback base address.
+    fn translate_with_fallback(self: *@This(), guest_virt: u64, fallback_base: u64) !u64 {
+        return kvm.vcpu.translate(self.vcpus[0].vcpu_fd, guest_virt) catch {
+            return guest_virt - fallback_base;
+        };
     }
 
     /// Deinitialize the VM and corresponding vCPUs.
