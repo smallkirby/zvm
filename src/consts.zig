@@ -13,6 +13,10 @@ pub const layout = struct {
     pub const BOOTPARAM = 0x0001_0000;
     /// Where the kernel cmdline is located.
     pub const CMDLINE = 0x0002_0000;
+    /// Where the initial ramdisk is loaded.
+    pub const INITRD = 0x0003_0000;
+    /// Highest address of the initial ramdisk.
+    pub const INITRD_MAX = 0x000E_0000;
     /// Where the protected-mode kernel code is loaded
     pub const KERNEL_BASE = 0x0010_0000;
 };

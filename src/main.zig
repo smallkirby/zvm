@@ -32,7 +32,7 @@ pub fn main() !void {
     _ = try file.readAll(buf);
 
     // load kernel image
-    try vm.load_kernel(buf);
+    try vm.load_kernel_and_initrd(buf, &.{});
 
     // start a loop
     while (true) {

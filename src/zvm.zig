@@ -153,7 +153,7 @@ pub const VM = struct {
     }
 
     /// Load an image to the guest physical memory
-    pub fn load_image(self: *@This(), image: []u8, addr: usize) !void {
+    fn load_image(self: *@This(), image: []u8, addr: usize) !void {
         if (self.guest_mem.len < addr + image.len) {
             return VMError.GMemNotEnough;
         }
@@ -267,7 +267,7 @@ pub const VM = struct {
     }
 
     /// Load a protected kernel image and cmdline to the guest physical memory.
-    pub fn load_kernel(self: *@This(), kernel: []u8) !void {
+    pub fn load_kernel_and_initrd(self: *@This(), kernel: []u8, initrd: []u8) !void {
         if (self.guest_mem.len < 1 * consts.units.GB) {
             return VMError.GMemNotEnough;
         }
@@ -277,14 +277,15 @@ pub const VM = struct {
         // setup necessary fields
         boot_params.hdr.type_of_loader = 0xFF;
         boot_params.hdr.ext_loader_ver = 0;
-        boot_params.hdr.ramdisk_image = 0; // TODO: option to use ramfs
-        boot_params.hdr.ramdisk_size = 0; // TODO: option to use ramfs
         boot_params.hdr.loadflags.LOADED_HIGH = true; // load kernel at 0x10_0000
         boot_params.hdr.loadflags.CAN_USE_HEAP = true; // use memory 0..BOOTPARAM as heap
         boot_params.hdr.heap_end_ptr = consts.layout.BOOTPARAM - 0x200;
         boot_params.hdr.loadflags.KEEP_SEGMENTS = true; // for 32-bit boot protocol
         boot_params.hdr.cmd_line_ptr = consts.layout.CMDLINE;
         boot_params.hdr.vid_mode = 0xFFFF; // VGA
+
+        // load initrd
+        try self.load_initrd(initrd, &boot_params);
 
         // setup cmdline
         const cmdline = self.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + boot_params.hdr.cmdline_size];
@@ -309,6 +310,24 @@ pub const VM = struct {
         regs.rip = consts.layout.KERNEL_BASE;
         regs.rsi = consts.layout.BOOTPARAM;
         try self.set_regs(0, regs);
+    }
+
+    /// Load initrd to the guest physical memory.
+    fn load_initrd(
+        self: *@This(),
+        initrd: []u8,
+        boot_params: *boot.BootParams,
+    ) !void {
+        if (initrd.len != 0) {
+            boot_params.hdr.ramdisk_image = 0;
+            boot_params.hdr.ramdisk_size = 0;
+            boot_params.hdr.initrd_addr_max = 0;
+        } else {
+            try self.load_image(initrd, consts.layout.INITRD);
+            boot_params.hdr.ramdisk_image = consts.layout.INITRD;
+            boot_params.hdr.ramdisk_size = @truncate(initrd.len);
+            boot_params.hdr.initrd_addr_max = consts.layout.INITRD_MAX;
+        }
     }
 
     /// Initialize CPUID.
@@ -518,7 +537,7 @@ test "Load dummy kernel & Set CPUID" {
     _ = try file.readAll(buf);
 
     // load kernel image
-    try vm.load_kernel(buf);
+    try vm.load_kernel_and_initrd(buf, &.{});
 
     // check if cmdline is set correctly
     const cmdline = vm.guest_mem[consts.layout.CMDLINE .. consts.layout.CMDLINE + 0x100];
@@ -532,10 +551,10 @@ test "Load dummy kernel & Set CPUID" {
         var entry = &cpuid.entries[i];
         switch (entry.function) {
             consts.kvm.KVM_CPUID_SIGNATURE => {
-                try expect(entry.eax == c.KVM_CPUID_FEATURES); // "ZVM"
-                try expect(entry.ebx == 0x004D565A);
-                try expect(entry.ecx == 0x00000000);
-                try expect(entry.edx == 0x00000000);
+                try expect(entry.eax == c.KVM_CPUID_FEATURES);
+                try expect(entry.ebx == 0x4B4D564B);
+                try expect(entry.ecx == 0x564B4D56);
+                try expect(entry.edx == 0x0000004D);
                 found = true;
             },
             else => {},
