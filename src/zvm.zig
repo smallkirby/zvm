@@ -271,6 +271,9 @@ pub const VM = struct {
         if (self.guest_mem.len < 1 * consts.units.GB) {
             return VMError.GMemNotEnough;
         }
+        if (kernel.len > consts.layout.INITRD - consts.layout.KERNEL_BASE) {
+            return VMError.GMemNotEnough;
+        }
 
         var boot_params = boot.BootParams.from_bytes(kernel);
 
@@ -318,15 +321,23 @@ pub const VM = struct {
         initrd: []u8,
         boot_params: *boot.BootParams,
     ) !void {
-        if (initrd.len != 0) {
+        if (consts.layout.INITRD_MAX - consts.layout.INITRD < initrd.len) {
+            return VMError.GMemNotEnough;
+        }
+        if (consts.layout.INITRD_MAX > self.guest_mem.len) {
+            return VMError.GMemNotEnough;
+        }
+        if (boot_params.hdr.initrd_addr_max < consts.layout.INITRD_MAX) {
+            return VMError.GMemNotEnough; // TODO: appropriate error
+        }
+
+        if (initrd.len == 0) {
             boot_params.hdr.ramdisk_image = 0;
             boot_params.hdr.ramdisk_size = 0;
-            boot_params.hdr.initrd_addr_max = 0;
         } else {
             try self.load_image(initrd, consts.layout.INITRD);
             boot_params.hdr.ramdisk_image = consts.layout.INITRD;
             boot_params.hdr.ramdisk_size = @truncate(initrd.len);
-            boot_params.hdr.initrd_addr_max = consts.layout.INITRD_MAX;
         }
     }
 

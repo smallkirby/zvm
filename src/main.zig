@@ -64,6 +64,7 @@ pub fn main() !void {
     _ = try file_kernel.readAll(buf_kernel);
 
     // read initrd
+    // TODO: modulize these loads
     const file_initrd = if (res.args.initrd) |initrd_path| blk: {
         break :blk std.fs.cwd().openFile(
             initrd_path,
@@ -80,7 +81,7 @@ pub fn main() !void {
     var buf_initrd: []u8 = &.{};
     if (file_initrd) |f| {
         buf_initrd = try allocator.alloc(u8, (try f.stat()).size);
-        _ = try file_kernel.readAll(buf_initrd);
+        _ = try f.readAll(buf_initrd);
     }
     defer allocator.free(buf_initrd);
 
