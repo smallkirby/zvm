@@ -2,6 +2,7 @@ const std = @import("std");
 const kvm = @import("kvm.zig");
 const zvm = @import("zvm.zig");
 const consts = @import("consts.zig");
+const clap = @import("clap");
 const c = @cImport({
     @cInclude("linux/kvm.h");
 });
@@ -10,6 +11,32 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    // build cmdline arguments
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help             Display this help and exit.
+        \\-n, --kernel <str>     An option parameter, which takes a value.
+        \\
+    );
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch |err| {
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer res.deinit();
+
+    // parse cmdline arguments
+    if (res.args.help != 0) {
+        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+    }
+    if (res.args.kernel == null) {
+        std.log.err("No bzImage specified. Use --kernel option.\n", .{});
+        std.os.exit(9);
+    }
+    const bzimage = res.args.kernel.?;
 
     // instantiate VM
     var vm = try zvm.VM.new();
@@ -23,10 +50,14 @@ pub fn main() !void {
     });
 
     // read kernel image
-    const file = try std.fs.cwd().openFile(
-        "bzImage", // TODO: take as cmdline argument
+    const file = std.fs.cwd().openFile(
+        bzimage,
         .{ .mode = .read_only },
-    );
+    ) catch |err| {
+        std.log.err("Failed to open bzImage: {s}", .{bzimage});
+        std.log.err("{}", .{err});
+        std.os.exit(9);
+    };
     const buf = try allocator.alloc(u8, (try file.stat()).size);
     defer allocator.free(buf);
     _ = try file.readAll(buf);
