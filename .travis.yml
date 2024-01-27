@@ -1,0 +1,16 @@
+branches:
+  only:
+    - master
+language: cpp
+dist: jammy
+services:
+  - docker
+
+before_install:
+  - sudo snap install zig --channel=latest/beta --classic
+  - zig version
+  - uname -a
+  - ls /dev/kvm -la
+
+script:
+  - sudo zig build test --summary all
