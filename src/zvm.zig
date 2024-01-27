@@ -5,8 +5,9 @@ const kvm = @import("kvm.zig");
 const consts = @import("consts.zig");
 const boot = @import("boot.zig");
 const builtin = @import("builtin");
-const linux = std.os.linux;
+const terminal = @import("terminal.zig");
 const pio = @import("pio.zig");
+const linux = std.os.linux;
 const c = @cImport({
     @cInclude("linux/kvm.h");
     @cInclude("linux/kvm_para.h");
@@ -39,6 +40,8 @@ pub const VM = struct {
     serial: pio.srl.SerialUart8250,
     /// Device manager
     device_manager: pio.PioDeviceManager,
+    /// TTY
+    tty: terminal.Tty,
 
     pub const VMOption = struct {
         /// Memory allocator used by the VM
@@ -67,6 +70,7 @@ pub const VM = struct {
             .guest_mem = undefined,
             .serial = undefined,
             .device_manager = undefined,
+            .tty = undefined,
         };
     }
 
@@ -189,6 +193,20 @@ pub const VM = struct {
     /// Enter the main loop of the VM.
     /// TODO: for now, this function assumes that there is only one vCPU.
     pub fn run_loop(self: *@This()) !void {
+        // set up TTY
+        self.tty = try terminal.Tty.new();
+        try self.tty.set_raw_mode();
+        defer self.tty.deinit();
+
+        // start input loop
+        const loop_hdr = try std.Thread.spawn(
+            .{},
+            terminal.Tty.loop_input,
+            .{ &self.tty, &self.serial },
+        );
+        loop_hdr.detach();
+
+        // enter main loop
         var vcpu = self.vcpus[0];
         const map = vcpu.kvm_run;
 

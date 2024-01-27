@@ -32,7 +32,7 @@ pub const SerialUart8250 = struct {
         /// Transmitter Holding Buffer
         thr: u8 = 0,
         /// Receiver Buffer
-        rbr: u8 = 0,
+        rbr: ?u8 = 0,
         /// Divisor Latch
         dl: u16 = @intCast(DIVISOR_LATCH_NUMERATOR / DEFAULT_BAUD_RATE),
         /// Interrupt Enable Register
@@ -69,7 +69,7 @@ pub const SerialUart8250 = struct {
             /// Transmitter Holding Register Empty
             thre: bool = true,
             /// Data Holding Register Empty
-            dhre: bool = false, // TODO: correct?
+            dhre: bool = true,
             /// FIFO Error
             fifo_err: bool = false,
         };
@@ -116,7 +116,9 @@ pub const SerialUart8250 = struct {
         const com1_port = port - PORTS.COM1;
         switch (com1_port) {
             0 => if (!self.dlab()) { // RBR
-                data[0] = self.regs.rbr; // TODO: read input from terminal
+                data[0] = self.regs.rbr orelse 0;
+                self.regs.rbr = null;
+                self.regs.lsr.dr = false;
             } else { // DLL
                 data[0] = @intCast(self.regs.dl & 0xFF);
             },
@@ -199,6 +201,20 @@ pub const SerialUart8250 = struct {
         // the level to be set 1 and then back to 0.
         try kvm.vm.irq_line(self.vm_fd, IRQ.COM1, 1);
         try kvm.vm.irq_line(self.vm_fd, IRQ.COM1, 0);
+    }
+
+    /// Take an input byte.
+    /// If the receiver buffer is full, this function returns 0.
+    /// Otherwise, it returns the number of bytes sent to the receiver buffer.
+    pub fn input(self: *@This(), data: u8) !usize {
+        if (self.regs.rbr != null) {
+            return 0;
+        }
+        self.regs.rbr = data;
+        self.regs.lsr.dr = true;
+        try self.generate_interrupt();
+
+        return 1;
     }
 };
 
@@ -285,7 +301,7 @@ test "UART I/O" {
     try expect(uart.regs.lsr.fe == false);
     try expect(uart.regs.lsr.bi == false);
     try expect(uart.regs.lsr.thre == true);
-    try expect(uart.regs.lsr.dhre == false);
+    try expect(uart.regs.lsr.dhre == true);
     try expect(uart.regs.lsr.fifo_err == false);
     clear_data(&data);
 }

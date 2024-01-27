@@ -3,6 +3,7 @@ comptime {
     _ = @import("zvm.zig");
     _ = @import("consts.zig");
     _ = @import("boot.zig");
+    _ = @import("terminal.zig");
 
     _ = @import("pio.zig");
     _ = @import("pio/serial.zig");
