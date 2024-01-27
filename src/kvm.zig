@@ -251,6 +251,13 @@ const KvmPitConfig = extern struct {
     channels: [15]u32,
 };
 
+const KvmIrqLevel = packed struct {
+    /// IRQ line
+    irq: u32,
+    /// Level of the IRQ line (0 or 1)
+    level: u32,
+};
+
 const KvmCpuidEntry2 = extern struct {
     /// EAX value to obtain the entry.
     function: u32,
@@ -497,6 +504,27 @@ pub const vm = struct {
             fd,
             c.KVM_CREATE_PIT2,
             @intFromPtr(&config),
+        );
+
+        if (ret < 0) {
+            return KvmError.IoctlFailed;
+        } else if (ret == 0) {
+            return;
+        } else {
+            unreachable;
+        }
+    }
+
+    /// Set the level of a GSI (Global System Interrupt).
+    pub fn irq_line(fd: vm_fd_t, irq: u32, level: u32) !void {
+        const irq_level = KvmIrqLevel{
+            .irq = irq,
+            .level = level,
+        };
+        const ret = ioctl(
+            fd,
+            c.KVM_IRQ_LINE,
+            @intFromPtr(&irq_level),
         );
 
         if (ret < 0) {

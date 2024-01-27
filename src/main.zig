@@ -91,7 +91,7 @@ pub fn main() !void {
 
     // initialize UART
     // TODO: hide inside VM
-    var uart = serial.SerialUart8250.new();
+    var uart = serial.SerialUart8250.new(vm.vm_fd);
 
     // start a loop
     while (true) {

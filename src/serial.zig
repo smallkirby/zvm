@@ -1,6 +1,7 @@
 //! This module provides the serial 8250 UART device emulation.
 
 const std = @import("std");
+const kvm = @import("kvm.zig");
 
 /// Serial 8250 UART.
 /// This UART does not provide any FIFO buffers.
@@ -13,10 +14,18 @@ pub const SerialUart8250 = struct {
         pub const COM3 = 0x3E8;
         pub const COM4 = 0x2E8;
     };
+    /// IRQ line numbers.
+    pub const IRQ = struct {
+        pub const COM1 = 4;
+        pub const COM2 = 3;
+        pub const COM3 = 4;
+        pub const COM4 = 3;
+    };
     const DIVISOR_LATCH_NUMERATOR = 115200;
     const DEFAULT_BAUD_RATE = 9600;
 
     regs: Regs,
+    vm_fd: kvm.vm_fd_t,
 
     /// UART registers
     const Regs = struct {
@@ -60,13 +69,13 @@ pub const SerialUart8250 = struct {
             /// Transmitter Holding Register Empty
             thre: bool = true,
             /// Data Holding Register Empty
-            dhre: bool = true, // TODO: correct?
+            dhre: bool = false, // TODO: correct?
             /// FIFO Error
             fifo_err: bool = false,
         };
 
         const InterruptEnableRegister = packed struct(u8) {
-            /// Enable received data available interrupt
+            /// Enable received data available interrupt.
             erdai: bool = false,
             /// Enable transmitter holding register empty interrupt
             ethre: bool = false,
@@ -74,12 +83,16 @@ pub const SerialUart8250 = struct {
             erls: bool = false,
             /// Enable modem status interrupt
             ems: bool = false,
-            /// Enable sleep mode
+            /// Enable sleep mode. 16750 only.
             esm: bool = false,
-            /// Enable low power mode
+            /// Enable low power mode. 16750 only.
             elpm: bool = false,
             /// Reserved
             reserved: u2 = 0,
+
+            pub fn interrupt_required(self: @This()) bool {
+                return self.erdai or self.ethre or self.erls or self.ems;
+            }
         };
     };
 
@@ -88,9 +101,10 @@ pub const SerialUart8250 = struct {
     }
 
     /// Create a new serial UART device.
-    pub fn new() @This() {
+    pub fn new(vm_fd: kvm.vm_fd_t) @This() {
         return @This(){
             .regs = Regs{},
+            .vm_fd = vm_fd,
         };
     }
 
@@ -149,8 +163,13 @@ pub const SerialUart8250 = struct {
                 self.regs.dl = (self.regs.dl & 0xFF00) | data[0];
             },
             1 => if (!self.dlab()) { // IER
-                // TODO: generate interrupt
                 self.regs.ier = @bitCast(data[0]);
+                // NOTE: If we don't generate interrupt here,
+                // the init process does not appear on the screen.
+                // I'm not sure why this happens.
+                if (self.regs.ier.interrupt_required()) {
+                    try self.generate_interrupt();
+                }
             } else { // DLH
                 self.regs.dl = (self.regs.dl & 0x00FF) | (@as(u16, data[0]) << 8);
             },
@@ -173,6 +192,13 @@ pub const SerialUart8250 = struct {
                 unreachable;
             },
         }
+    }
+
+    fn generate_interrupt(self: *@This()) !void {
+        // KVM API doc says that edge-triggered interrupt require
+        // the level to be set 1 and then back to 0.
+        try kvm.vm.irq_line(self.vm_fd, IRQ.COM1, 1);
+        try kvm.vm.irq_line(self.vm_fd, IRQ.COM1, 0);
     }
 };
 
@@ -208,7 +234,7 @@ test "LSR repr" {
 }
 
 test "UART I/O" {
-    var uart = SerialUart8250.new();
+    var uart = SerialUart8250.new(-1);
     var data = [_]u8{0} ** 0x30;
     const com = SerialUart8250.PORTS.COM1;
 
