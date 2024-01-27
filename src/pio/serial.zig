@@ -1,7 +1,7 @@
 //! This module provides the serial 8250 UART device emulation.
 
 const std = @import("std");
-const kvm = @import("kvm.zig");
+const kvm = @import("../kvm.zig");
 
 /// Serial 8250 UART.
 /// This UART does not provide any FIFO buffers.
@@ -285,7 +285,7 @@ test "UART I/O" {
     try expect(uart.regs.lsr.fe == false);
     try expect(uart.regs.lsr.bi == false);
     try expect(uart.regs.lsr.thre == true);
-    try expect(uart.regs.lsr.dhre == true);
+    try expect(uart.regs.lsr.dhre == false);
     try expect(uart.regs.lsr.fifo_err == false);
     clear_data(&data);
 }

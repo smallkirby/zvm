@@ -1,12 +1,8 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
 const zvm = @import("zvm.zig");
-const serial = @import("serial.zig");
 const consts = @import("consts.zig");
 const clap = @import("clap");
-const c = @cImport({
-    @cInclude("linux/kvm.h");
-});
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -89,62 +85,6 @@ pub fn main() !void {
     // load kernel and initrd image
     try vm.load_kernel_and_initrd(buf_kernel, buf_initrd);
 
-    // initialize UART
-    // TODO: hide inside VM
-    var uart = serial.SerialUart8250.new(vm.vm_fd);
-
     // start a loop
-    while (true) {
-        try vm.run();
-        const run = vm.vcpus[0].kvm_run;
-
-        switch (run.exit_reason) {
-            c.KVM_EXIT_IO => {
-                const port = run.uni.io.port;
-                switch (port) {
-                    0x61 => { // NMI
-                        if (run.uni.io.direction == c.KVM_EXIT_IO_IN) {
-                            var bytes = run.as_bytes();
-                            bytes[run.uni.io.data_offset] = 0x20;
-                        }
-                    },
-                    else => {
-                        // TODO: modulize
-                        if (serial.SerialUart8250.PORTS.COM1 <= port and port < serial.SerialUart8250.PORTS.COM1 + 8) {
-                            const size = run.uni.io.size;
-                            const offset = run.uni.io.data_offset;
-                            var bytes = run.as_bytes()[offset .. offset + size];
-                            if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
-                                try uart.out(port, bytes);
-                            } else {
-                                try uart.in(port, bytes);
-                            }
-                        }
-                    },
-                }
-            },
-            c.KVM_EXIT_SHUTDOWN => {
-                std.log.warn("SHUTDOWN\n", .{});
-
-                const regs = try vm.get_regs(0);
-                regs.debug_print();
-                try vm.print_stacktrace();
-
-                break;
-            },
-            c.KVM_EXIT_HLT => {
-                std.log.warn("HLT\n", .{});
-
-                const regs = try vm.get_regs(0);
-                regs.debug_print();
-                try vm.print_stacktrace();
-
-                break;
-            },
-            else => {
-                std.log.warn("EXIT_REASON: {}\n", .{run.exit_reason});
-                std.os.exit(99);
-            },
-        }
-    }
+    try vm.run_loop();
 }

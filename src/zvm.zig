@@ -6,6 +6,7 @@ const consts = @import("consts.zig");
 const boot = @import("boot.zig");
 const builtin = @import("builtin");
 const linux = std.os.linux;
+const pio = @import("pio.zig");
 const c = @cImport({
     @cInclude("linux/kvm.h");
     @cInclude("linux/kvm_para.h");
@@ -34,6 +35,10 @@ pub const VM = struct {
     general_allocator: std.mem.Allocator,
     /// Guest physical memory.
     guest_mem: []u8,
+    /// 8250 serial console
+    serial: pio.srl.SerialUart8250,
+    /// Device manager
+    device_manager: pio.PioDeviceManager,
 
     pub const VMOption = struct {
         /// Memory allocator used by the VM
@@ -60,6 +65,8 @@ pub const VM = struct {
             .page_allocator = undefined,
             .general_allocator = undefined,
             .guest_mem = undefined,
+            .serial = undefined,
+            .device_manager = undefined,
         };
     }
 
@@ -106,6 +113,17 @@ pub const VM = struct {
 
         // Init protected mode
         try self.init_protected_mode();
+
+        // Init serial console
+        self.serial = pio.srl.SerialUart8250.new(self.vm_fd);
+
+        // Init device manager
+        self.device_manager = pio.PioDeviceManager.new(self.general_allocator);
+        try self.device_manager.add_device(.{
+            .addr_start = pio.srl.SerialUart8250.PORTS.COM1,
+            .addr_end = pio.srl.SerialUart8250.PORTS.COM1 + 8,
+            .interface = .{ .serial = &self.serial },
+        });
     }
 
     /// Clear all segment registers of all vCPUs
@@ -161,11 +179,54 @@ pub const VM = struct {
         @memcpy(self.guest_mem[addr .. addr + image.len], image);
     }
 
-    /// Run the VM.
+    /// Run the VM until it exits once.
     /// TODO: for now, this function assumes that there is only one vCPU.
-    pub fn run(self: *@This()) !void {
+    pub fn run_single(self: *@This()) !void {
         var vcpu = self.vcpus[0];
         try kvm.vcpu.run(vcpu.vcpu_fd);
+    }
+
+    /// Enter the main loop of the VM.
+    /// TODO: for now, this function assumes that there is only one vCPU.
+    pub fn run_loop(self: *@This()) !void {
+        var vcpu = self.vcpus[0];
+        const map = vcpu.kvm_run;
+
+        while (true) {
+            try self.run_single();
+
+            switch (map.exit_reason) {
+                0x61 => { // NMI
+                    if (map.uni.io.direction == c.KVM_EXIT_IO_IN) {
+                        var bytes = map.as_bytes();
+                        bytes[map.uni.io.data_offset] = 0x20;
+                    }
+                },
+                c.KVM_EXIT_IO => {
+                    const port = map.uni.io.port;
+                    const size = map.uni.io.size;
+                    const offset = map.uni.io.data_offset;
+                    var bytes = map.as_bytes()[offset .. offset + size];
+                    if (map.uni.io.direction == c.KVM_EXIT_IO_OUT) {
+                        try self.device_manager.out(port, bytes);
+                    } else {
+                        try self.device_manager.in(port, bytes);
+                    }
+                },
+                c.KVM_EXIT_SHUTDOWN => {
+                    std.log.info("VM shutdown", .{});
+                    return;
+                },
+                c.KVM_EXIT_HLT => {
+                    std.log.info("VM halted", .{});
+                    return;
+                },
+                else => {
+                    std.log.err("Unknown exit reason: {d}", .{map.exit_reason});
+                    return;
+                },
+            }
+        }
     }
 
     /// Check if the KVM API is compatible
@@ -427,12 +488,16 @@ pub const VM = struct {
 
     /// Deinitialize the VM and corresponding vCPUs.
     /// Caller must defer this function after initializing the VM.
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
+        // deinit vCPUs
         for (self.vcpus) |vcpu| {
             vcpu.deinit() catch unreachable;
         }
-
         self.general_allocator.free(self.vcpus);
+
+        // deinit devices
+        self.device_manager.deinit();
+
         // TODO: other deinitializations
     }
 };
@@ -509,7 +574,7 @@ test "Run simple assembly" {
     // test
     var count: u32 = 0;
     while (count < 3) {
-        try vm.run();
+        try vm.run_single();
         const map = vm.vcpus[0].kvm_run;
 
         switch (map.exit_reason) {
