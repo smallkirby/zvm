@@ -103,7 +103,7 @@ pub fn main() !void {
                             bytes[run.uni.io.data_offset] = 0x20;
                         }
                     },
-                    0x3F8 => { // VGA
+                    0x3F8 => { // Serial
                         if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
                             const size = run.uni.io.size;
                             const offset = run.uni.io.data_offset;
@@ -120,6 +120,15 @@ pub fn main() !void {
             },
             c.KVM_EXIT_SHUTDOWN => {
                 std.log.warn("SHUTDOWN\n", .{});
+
+                const regs = try vm.get_regs(0);
+                regs.debug_print();
+                try vm.print_stacktrace();
+
+                break;
+            },
+            c.KVM_EXIT_HLT => {
+                std.log.warn("HLT\n", .{});
 
                 const regs = try vm.get_regs(0);
                 regs.debug_print();
