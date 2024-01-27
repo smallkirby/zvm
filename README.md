@@ -8,11 +8,11 @@ Under development... 🚧
 
 | Subject | Status |
 |---|---|
-| `initram` support | 🌧 |
+| `initram` support | 🌞 |
 | `initrd` support | 🌧 |
-| Boot `init` process | ☁️ |
+| Boot `init` process | 🌞 |
 | Variable memory size | 🌧 |
-| Keyboard interruction | 🌧 |
+| Keyboard interruction | 🌞 |
 | Networking support (`virtio-net`) | 🌧 |
 | Support multi cores | ⛈ |
 | Switchable logging | 🌧 |
