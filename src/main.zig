@@ -1,6 +1,7 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
 const zvm = @import("zvm.zig");
+const serial = @import("serial.zig");
 const consts = @import("consts.zig");
 const clap = @import("clap");
 const c = @cImport({
@@ -88,6 +89,10 @@ pub fn main() !void {
     // load kernel and initrd image
     try vm.load_kernel_and_initrd(buf_kernel, buf_initrd);
 
+    // initialize UART
+    // TODO: hide inside VM
+    var uart = serial.SerialUart8250.new();
+
     // start a loop
     while (true) {
         try vm.run();
@@ -95,27 +100,27 @@ pub fn main() !void {
 
         switch (run.exit_reason) {
             c.KVM_EXIT_IO => {
-                // TODO: define constants for ports num
-                switch (run.uni.io.port) {
+                const port = run.uni.io.port;
+                switch (port) {
                     0x61 => { // NMI
                         if (run.uni.io.direction == c.KVM_EXIT_IO_IN) {
                             var bytes = run.as_bytes();
                             bytes[run.uni.io.data_offset] = 0x20;
                         }
                     },
-                    0x3F8 => { // Serial
-                        if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
+                    else => {
+                        // TODO: modulize
+                        if (serial.SerialUart8250.PORTS.COM1 <= port and port < serial.SerialUart8250.PORTS.COM1 + 8) {
                             const size = run.uni.io.size;
                             const offset = run.uni.io.data_offset;
-                            const bytes = run.as_bytes()[offset .. offset + size];
-                            std.debug.print("{s}", .{bytes});
+                            var bytes = run.as_bytes()[offset .. offset + size];
+                            if (run.uni.io.direction == c.KVM_EXIT_IO_OUT) {
+                                try uart.out(port, bytes);
+                            } else {
+                                try uart.in(port, bytes);
+                            }
                         }
                     },
-                    0x3F8 + 5 => { // TODO: doc
-                        var bytes = run.as_bytes();
-                        bytes[run.uni.io.data_offset] = 0x20;
-                    },
-                    else => {},
                 }
             },
             c.KVM_EXIT_SHUTDOWN => {

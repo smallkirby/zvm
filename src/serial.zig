@@ -7,7 +7,7 @@ const std = @import("std");
 /// ref: https://en.wikibooks.org/wiki/Serial_Programming/8250_UART_Programming
 pub const SerialUart8250 = struct {
     /// Port I/O addresses.
-    const PORTS = struct {
+    pub const PORTS = struct {
         pub const COM1 = 0x3F8;
         pub const COM2 = 0x2F8;
         pub const COM3 = 0x3E8;
@@ -27,7 +27,7 @@ pub const SerialUart8250 = struct {
         /// Divisor Latch
         dl: u16 = @intCast(DIVISOR_LATCH_NUMERATOR / DEFAULT_BAUD_RATE),
         /// Interrupt Enable Register
-        ier: u8 = 0,
+        ier: InterruptEnableRegister = InterruptEnableRegister{},
         /// Line Control Register
         lcr: LineControlRegister = LineControlRegister{},
         /// Line Status Register
@@ -64,6 +64,23 @@ pub const SerialUart8250 = struct {
             /// FIFO Error
             fifo_err: bool = false,
         };
+
+        const InterruptEnableRegister = packed struct(u8) {
+            /// Enable received data available interrupt
+            erdai: bool = false,
+            /// Enable transmitter holding register empty interrupt
+            ethre: bool = false,
+            /// Enable receiver line status interrupt
+            erls: bool = false,
+            /// Enable modem status interrupt
+            ems: bool = false,
+            /// Enable sleep mode
+            esm: bool = false,
+            /// Enable low power mode
+            elpm: bool = false,
+            /// Reserved
+            reserved: u2 = 0,
+        };
     };
 
     fn dlab(self: *@This()) bool {
@@ -90,7 +107,7 @@ pub const SerialUart8250 = struct {
                 data[0] = @intCast(self.regs.dl & 0xFF);
             },
             1 => if (!self.dlab()) { // IER
-                // TODO: unimplemented
+                data[0] = @bitCast(self.regs.ier);
             } else { // DLH
                 data[0] = @intCast(self.regs.dl >> 8);
             },
@@ -132,7 +149,8 @@ pub const SerialUart8250 = struct {
                 self.regs.dl = (self.regs.dl & 0xFF00) | data[0];
             },
             1 => if (!self.dlab()) { // IER
-                // TODO: unimplemented
+                // TODO: generate interrupt
+                self.regs.ier = @bitCast(data[0]);
             } else { // DLH
                 self.regs.dl = (self.regs.dl & 0x00FF) | (@as(u16, data[0]) << 8);
             },
