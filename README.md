@@ -18,7 +18,7 @@ Under development... 🚧
 | Support multi cores | ⛈ |
 | Switchable logging | 🌧 |
 | Not depend on libc | ☁️ |
-| CI | 🌧 |
+| CI | ⛅ |
 
 ## Tests
 
