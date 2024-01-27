@@ -17,7 +17,7 @@ Under development... 🚧
 | Networking support (`virtio-net`) | 🌧 |
 | Support multi cores | ⛈ |
 | Switchable logging | 🌧 |
-| Not depend on libc | ☁️ |
+| Not depend on external libc | 🌞 |
 | CI | ⛅ |
 
 ## Tests

@@ -1,13 +1,9 @@
 //! This module provides a collection of KVM API bindings.
 
 const std = @import("std");
+const consts = @import("consts.zig");
 const os = std.os;
 const linux = os.linux;
-const c = @cImport({
-    @cInclude("linux/kvm.h");
-    @cInclude("fcntl.h");
-    @cInclude("errno.h");
-});
 
 const fd_t = linux.fd_t;
 pub const kvm_fd_t = fd_t;
@@ -18,6 +14,42 @@ fn ioctl(fd: fd_t, request: u32, arg: u64) i32 {
     const ret = linux.ioctl(fd, request, arg);
     return @as(i32, @bitCast(@as(u32, @truncate(ret))));
 }
+
+const k = struct {
+    fn KIO(size: u8) u32 {
+        return linux.IOCTL.IO(KVMIO, size);
+    }
+    fn KIOW(size: u8, comptime T: type) u32 {
+        return linux.IOCTL.IOW(KVMIO, size, T);
+    }
+    fn KIOWR(size: u8, comptime T: type) u32 {
+        return linux.IOCTL.IOWR(KVMIO, size, T);
+    }
+    fn KIOR(size: u8, comptime T: type) u32 {
+        return linux.IOCTL.IOR(KVMIO, size, T);
+    }
+    const KVMIO = 0xAE;
+
+    pub const KVM_GET_API_VERSION = KIO(0x0000_0000);
+    pub const KVM_CREATE_VM = KIO(0x0000_0001);
+    pub const KVM_GET_VCPU_MMAP_SIZE = KIO(0x0000_0004);
+    pub const KVM_GET_SUPPORTED_CPUID = KIOWR(0x0000_0005, [2]u32);
+    pub const KVM_CREATE_VCPU = KIO(0x0000_0041);
+    pub const KVM_SET_USER_MEMORY_REGION = KIOW(0x0000_0046, KvmUserspaceMemoryRegion);
+    pub const KVM_SET_TSS_ADDR = KIO(0x0000_0047);
+    pub const KVM_SET_IDENTITY_MAP_ADDR = KIOW(0x0000_0048, u64);
+    pub const KVM_CREATE_IRQCHIP = KIO(0x0000_0060);
+    pub const KVM_IRQ_LINE = KIOW(0x0000_0061, KvmIrqLevel);
+    pub const KVM_CREATE_PIT2 = KIOW(0x0000_0077, KvmPitConfig);
+    pub const KVM_RUN = KIO(0x0000_0080);
+    pub const KVM_GET_REGS = KIOR(0x0000_0081, KvmRegs);
+    pub const KVM_SET_REGS = KIOW(0x0000_0082, KvmRegs);
+    pub const KVM_GET_SREGS = KIOR(0x0000_0083, KvmSregs);
+    pub const KVM_SET_SREGS = KIOW(0x0000_0084, KvmSregs);
+    pub const KVM_TRANSLATE = KIOWR(0x0000_0085, KvmTranslation);
+    pub const KVM_SET_CPUID2 = KIOW(0x0000_0090, [2]u32);
+    pub const KVM_GET_CPUID2 = KIOWR(0x0000_0091, [2]u32);
+};
 
 pub const KvmError = error{
     IoctlFailed,
@@ -79,7 +111,7 @@ pub const KvmDtable = extern struct {
 };
 
 pub const KvmSregs = extern struct {
-    pub const BITMAP_SIZE = (c.KVM_NR_INTERRUPTS + 63) / 64;
+    pub const BITMAP_SIZE = (consts.kvm.KVM_NR_INTERRUPTS + 63) / 64;
 
     cs: KvmSegment,
     ds: KvmSegment,
@@ -212,6 +244,24 @@ pub const KvmRegs = extern struct {
     }
 };
 
+pub const KvmUserspaceMemoryRegion = packed struct {
+    slot: u32,
+    flags: u32,
+    guest_phys_addr: u64,
+    memory_size: u64,
+    userspace_addr: u64,
+
+    pub fn new(size: usize, addr: [*]u8) @This() {
+        return .{
+            .slot = 0,
+            .flags = 0,
+            .guest_phys_addr = 0,
+            .memory_size = @intCast(size),
+            .userspace_addr = @intFromPtr(addr),
+        };
+    }
+};
+
 pub const KvmRun = extern struct {
     request_interrupt_window: u8,
     immediate_exit: u8,
@@ -313,6 +363,15 @@ pub const KvmCpuid = extern struct {
     }
 };
 
+pub const KvmTranslation = extern struct {
+    linear_address: u64 align(1),
+    physical_address: u64 align(1),
+    valid: u8 align(1),
+    writeable: u8 align(1),
+    usermode: u8 align(1),
+    pad: [5]u8 align(1),
+};
+
 /// KVM system API which qery and set global attributes of the whole KVM subsystem.
 pub const system = struct {
     /// Get a handle to the KVM subsystem.
@@ -331,7 +390,7 @@ pub const system = struct {
     pub fn get_api_version(fd: kvm_fd_t) !usize {
         const ret = ioctl(
             fd,
-            c.KVM_GET_API_VERSION,
+            k.KVM_GET_API_VERSION,
             0,
         );
         if (ret < 0) {
@@ -345,7 +404,7 @@ pub const system = struct {
     pub fn create_vm(fd: kvm_fd_t) !vm_fd_t {
         const ret = ioctl(
             fd,
-            c.KVM_CREATE_VM,
+            k.KVM_CREATE_VM,
             0,
         );
         if (ret < 0) {
@@ -359,7 +418,7 @@ pub const system = struct {
     pub fn get_vcpu_mmap_size(fd: kvm_fd_t) !usize {
         const ret = ioctl(
             fd,
-            c.KVM_GET_VCPU_MMAP_SIZE,
+            k.KVM_GET_VCPU_MMAP_SIZE,
             0,
         );
         if (ret < 0) {
@@ -375,7 +434,7 @@ pub const system = struct {
         var cpuid = KvmCpuid.new();
         const ret = ioctl(
             fd,
-            c.KVM_GET_SUPPORTED_CPUID,
+            k.KVM_GET_SUPPORTED_CPUID,
             @intFromPtr(&cpuid),
         );
         if (ret < 0) {
@@ -388,24 +447,6 @@ pub const system = struct {
 
 /// KVM VM API which query and set attributes affecting an entire virtual machine.
 pub const vm = struct {
-    pub const KvmUserspaceMemoryRegion = packed struct {
-        slot: u32,
-        flags: u32,
-        guest_phys_addr: u64,
-        memory_size: u64,
-        userspace_addr: u64,
-
-        pub fn new(size: usize, addr: [*]u8) @This() {
-            return .{
-                .slot = 0,
-                .flags = 0,
-                .guest_phys_addr = 0,
-                .memory_size = @intCast(size),
-                .userspace_addr = @intFromPtr(addr),
-            };
-        }
-    };
-
     /// Set a memory region for the virtual machine allocationg specified size of memory.
     /// NOTE: should take an allocator?
     pub fn set_user_memory_region(
@@ -418,7 +459,7 @@ pub const vm = struct {
         const region = KvmUserspaceMemoryRegion.new(size, mem.ptr);
         const ret = ioctl(
             fd,
-            c.KVM_SET_USER_MEMORY_REGION,
+            k.KVM_SET_USER_MEMORY_REGION,
             @intFromPtr(&region),
         );
 
@@ -433,7 +474,7 @@ pub const vm = struct {
     pub fn set_tss_addr(fd: vm_fd_t, addr: u64) !void {
         const ret = ioctl(
             fd,
-            c.KVM_SET_TSS_ADDR,
+            k.KVM_SET_TSS_ADDR,
             addr,
         );
         if (ret < 0) {
@@ -450,7 +491,7 @@ pub const vm = struct {
         var v_addr = addr;
         const ret = ioctl(
             fd,
-            c.KVM_SET_IDENTITY_MAP_ADDR,
+            k.KVM_SET_IDENTITY_MAP_ADDR,
             @intFromPtr(&v_addr),
         );
         if (ret < 0) {
@@ -466,7 +507,7 @@ pub const vm = struct {
     pub fn create_vcpu(fd: vm_fd_t, cpuid: usize) !vcpu_fd_t {
         const ret = ioctl(
             fd,
-            c.KVM_CREATE_VCPU,
+            k.KVM_CREATE_VCPU,
             // NOTE: should check recommended/mamimux vCPU count
             //  that can be retrieved by KVM_CHECK_EXTENSION.
             cpuid,
@@ -482,7 +523,7 @@ pub const vm = struct {
     pub fn create_irqchip(fd: vm_fd_t) !void {
         const ret = ioctl(
             fd,
-            c.KVM_CREATE_IRQCHIP,
+            k.KVM_CREATE_IRQCHIP,
             0,
         );
         if (ret < 0) {
@@ -502,7 +543,7 @@ pub const vm = struct {
         };
         const ret = ioctl(
             fd,
-            c.KVM_CREATE_PIT2,
+            k.KVM_CREATE_PIT2,
             @intFromPtr(&config),
         );
 
@@ -523,7 +564,7 @@ pub const vm = struct {
         };
         const ret = ioctl(
             fd,
-            c.KVM_IRQ_LINE,
+            k.KVM_IRQ_LINE,
             @intFromPtr(&irq_level),
         );
 
@@ -544,7 +585,7 @@ pub const vcpu = struct {
         var sregs = KvmSregs.new();
         const ret = ioctl(
             fd,
-            c.KVM_GET_SREGS,
+            k.KVM_GET_SREGS,
             @intFromPtr(&sregs),
         );
 
@@ -561,7 +602,7 @@ pub const vcpu = struct {
     pub fn set_sregs(fd: vcpu_fd_t, sregs: KvmSregs) !void {
         const ret = linux.ioctl(
             fd,
-            c.KVM_SET_SREGS,
+            k.KVM_SET_SREGS,
             @intFromPtr(&sregs),
         );
         if (ret < 0) {
@@ -578,7 +619,7 @@ pub const vcpu = struct {
         var regs = KvmRegs.new();
         const ret = ioctl(
             fd,
-            c.KVM_GET_REGS,
+            k.KVM_GET_REGS,
             @intFromPtr(&regs),
         );
 
@@ -595,7 +636,7 @@ pub const vcpu = struct {
     pub fn set_regs(fd: vcpu_fd_t, regs: KvmRegs) !void {
         const ret = ioctl(
             fd,
-            c.KVM_SET_REGS,
+            k.KVM_SET_REGS,
             @intFromPtr(&regs),
         );
 
@@ -612,7 +653,7 @@ pub const vcpu = struct {
     pub fn run(fd: vcpu_fd_t) !void {
         const ret = ioctl(
             fd,
-            c.KVM_RUN,
+            k.KVM_RUN,
             0,
         );
 
@@ -651,7 +692,7 @@ pub const vcpu = struct {
         var cpuid = KvmCpuid.new();
         const ret = ioctl(
             fd,
-            c.KVM_GET_CPUID2,
+            k.KVM_GET_CPUID2,
             @intFromPtr(&cpuid),
         );
 
@@ -668,7 +709,7 @@ pub const vcpu = struct {
     pub fn set_cpuid(fd: vcpu_fd_t, cpuid: *KvmCpuid) !void {
         const ret = ioctl(
             fd,
-            c.KVM_SET_CPUID2,
+            k.KVM_SET_CPUID2,
             @intFromPtr(cpuid),
         );
 
@@ -684,7 +725,7 @@ pub const vcpu = struct {
     /// Translate a guest linear address to a guest physical address.
     pub fn translate(fd: vcpu_fd_t, addr: u64) !u64 {
         // TODO: define zig struct
-        var t = c.kvm_translation{
+        var t = KvmTranslation{
             .linear_address = addr,
             .physical_address = 0,
             .valid = 0,
@@ -694,7 +735,7 @@ pub const vcpu = struct {
         };
         const ret = ioctl(
             fd,
-            c.KVM_TRANSLATE,
+            k.KVM_TRANSLATE,
             @intFromPtr(&t),
         );
 
@@ -762,10 +803,6 @@ test "KVM_CREATE_VCPU" {
 test "KVM_{GET/SET}_SREGS" {
     // compatibility check
     try expectEqual(KvmSregs.BITMAP_SIZE, 4);
-    try expectEqual(@sizeOf(KvmSegment), @sizeOf(c.kvm_segment));
-    try expectEqual(@sizeOf(KvmSregs), @sizeOf(c.kvm_sregs));
-    try expectEqual(@offsetOf(KvmSregs, "cs"), @offsetOf(c.kvm_sregs, "cs"));
-    try expectEqual(@offsetOf(KvmSregs, "cr0"), @offsetOf(c.kvm_sregs, "cr0"));
 
     // normal test
     const fd = try system.open_kvm_fd();

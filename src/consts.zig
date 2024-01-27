@@ -1,5 +1,8 @@
 //! This module provides sets of constants.
 
+const std = @import("std");
+const linux = std.os.linux;
+
 pub const x64 = struct {
     /// Page size in bytes
     pub const PAGE_SIZE = 0x1000;
@@ -26,5 +29,15 @@ pub const units = struct {
 };
 
 pub const kvm = struct {
+    pub const KVM_NR_INTERRUPTS = 256;
+
     pub const KVM_CPUID_SIGNATURE = 0x4000_0000;
+    pub const KVM_CPUID_FEATURES = 0x4000_0001;
+
+    pub const KVM_EXIT_IO = 0x00000002;
+    pub const KVM_EXIT_HLT = 0x00000005;
+    pub const KVM_EXIT_SHUTDOWN = 0x00000008;
+
+    pub const KVM_EXIT_IO_IN = 0x00000000;
+    pub const KVM_EXIT_IO_OUT = 0x00000001;
 };

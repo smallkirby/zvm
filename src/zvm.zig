@@ -8,10 +8,6 @@ const builtin = @import("builtin");
 const terminal = @import("terminal.zig");
 const pio = @import("pio.zig");
 const linux = std.os.linux;
-const c = @cImport({
-    @cInclude("linux/kvm.h");
-    @cInclude("linux/kvm_para.h");
-});
 
 pub const VMError = error{
     /// VM or vCPU is not ready for the operations
@@ -215,27 +211,27 @@ pub const VM = struct {
 
             switch (map.exit_reason) {
                 0x61 => { // NMI
-                    if (map.uni.io.direction == c.KVM_EXIT_IO_IN) {
+                    if (map.uni.io.direction == consts.kvm.KVM_EXIT_IO_IN) {
                         var bytes = map.as_bytes();
                         bytes[map.uni.io.data_offset] = 0x20;
                     }
                 },
-                c.KVM_EXIT_IO => {
+                consts.kvm.KVM_EXIT_IO => {
                     const port = map.uni.io.port;
                     const size = map.uni.io.size;
                     const offset = map.uni.io.data_offset;
                     var bytes = map.as_bytes()[offset .. offset + size];
-                    if (map.uni.io.direction == c.KVM_EXIT_IO_OUT) {
+                    if (map.uni.io.direction == consts.kvm.KVM_EXIT_IO_OUT) {
                         try self.device_manager.out(port, bytes);
                     } else {
                         try self.device_manager.in(port, bytes);
                     }
                 },
-                c.KVM_EXIT_SHUTDOWN => {
+                consts.kvm.KVM_EXIT_SHUTDOWN => {
                     std.log.info("VM shutdown", .{});
                     return;
                 },
-                c.KVM_EXIT_HLT => {
+                consts.kvm.KVM_EXIT_HLT => {
                     std.log.info("VM halted", .{});
                     return;
                 },
@@ -437,7 +433,7 @@ pub const VM = struct {
             var entry = &cpuid.entries[i];
             switch (entry.function) {
                 consts.kvm.KVM_CPUID_SIGNATURE => {
-                    entry.eax = c.KVM_CPUID_FEATURES;
+                    entry.eax = consts.kvm.KVM_CPUID_FEATURES;
                     // This ID is defined by Linux. We cannot choose arbitrary value.
                     entry.ebx = 0x4B4D564B; // "KVMK"
                     entry.ecx = 0x564B4D56; // "VMKV"
@@ -596,7 +592,7 @@ test "Run simple assembly" {
         const map = vm.vcpus[0].kvm_run;
 
         switch (map.exit_reason) {
-            c.KVM_EXIT_IO => {
+            consts.kvm.KVM_EXIT_IO => {
                 try expect(map.uni.io.port == 0x10);
                 const map_u8: [*]u8 = @ptrCast(map);
                 const data_p: *u32 = @alignCast(
@@ -652,7 +648,7 @@ test "Load dummy kernel & Set CPUID" {
         var entry = &cpuid.entries[i];
         switch (entry.function) {
             consts.kvm.KVM_CPUID_SIGNATURE => {
-                try expect(entry.eax == c.KVM_CPUID_FEATURES);
+                try expect(entry.eax == consts.kvm.KVM_CPUID_FEATURES);
                 try expect(entry.ebx == 0x4B4D564B);
                 try expect(entry.ecx == 0x564B4D56);
                 try expect(entry.edx == 0x0000004D);
