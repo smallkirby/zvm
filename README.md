@@ -12,7 +12,7 @@ Under development... 🚧
 | `initram` support | 🌞 |
 | `initrd` support | 🌧 |
 | Boot `init` process | 🌞 |
-| Variable memory size | 🌧 |
+| Variable memory size | 🌞 |
 | Keyboard interruction | 🌞 |
 | Networking support (`virtio-net`) | 🌧 |
 | Support multi cores | ⛈ |

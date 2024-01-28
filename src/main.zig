@@ -1,6 +1,7 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
 const zvm = @import("zvm.zig");
+const util = @import("util.zig");
 const consts = @import("consts.zig");
 const clap = @import("clap");
 
@@ -14,6 +15,7 @@ pub fn main() !void {
         \\-h, --help             Display this help and exit.
         \\-k, --kernel <str>     Kenel bzImage path.
         \\-i, --initrd <str>     initramfs or initrd path.
+        \\-m, --memory <str>     Memory size. (eg. 100MB, 1G, 2000B)
         \\
     );
     var diag = clap.Diagnostic{};
@@ -30,6 +32,16 @@ pub fn main() !void {
     if (res.args.help != 0) {
         return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
     }
+    var mem_size: usize = undefined;
+    if (res.args.memory) |mem_size_str| {
+        mem_size = util.convert_mem_unit(mem_size_str) catch {
+            std.log.err("Failed to parse memory size: {s}", .{mem_size_str});
+            std.os.exit(1);
+        };
+    } else {
+        std.log.info("No memory size specified. Using 1GB as default.", .{});
+        mem_size = 1 * consts.units.GB;
+    }
 
     // instantiate VM
     var vm = try zvm.VM.new();
@@ -39,7 +51,7 @@ pub fn main() !void {
     try vm.init(.{
         .page_allocator = std.heap.page_allocator,
         .general_allocator = allocator,
-        .mem_size_bytes = 1 * consts.units.GB,
+        .mem_size_bytes = mem_size,
     });
 
     // read kernel image
