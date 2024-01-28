@@ -40,6 +40,7 @@ pub const Pci = struct {
                 if (self.config_address.bus != 0) return;
                 if (self.config_address.function != 0) return;
                 if (self.config_address.device >= self.devices.items.len) return;
+                if (self.config_address.enable == false) return;
 
                 const offset = port - consts.ports.PCI_CONFIG_DATA;
                 switch (self.devices.items[self.config_address.device]) {
@@ -74,10 +75,11 @@ pub const Pci = struct {
     }
 
     fn data_to_u32(data: []u8) u32 {
+        // PIC configuration space is little endian regardless of the host endian.
         switch (data.len) {
             1 => return @intCast(data[0]),
-            2 => return std.mem.readIntNative(u16, data[0..2]),
-            4 => return std.mem.readIntNative(u32, data[0..4]),
+            2 => return std.mem.readIntLittle(u16, data[0..2]),
+            4 => return std.mem.readIntLittle(u32, data[0..4]),
             else => unreachable,
         }
     }
@@ -160,7 +162,7 @@ const PciDevice = union(enum) {
 
 const PciHostBridge = struct {
     // Linux checks if mechanism #1 is available during PCI initialization.
-    // One of below conditions must be satisfied to pass the check:
+    // One of the below conditions must be satisfied to pass the check:
     //  - The device class and subclass is a host bridge.
     //  - The device class and subclass is a VGA compatible controller.
     //  - The vendor ID is Intel (0x8086).
