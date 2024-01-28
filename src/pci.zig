@@ -37,9 +37,15 @@ pub const Pci = struct {
                 @memcpy(data, std.mem.asBytes(&self.config_address));
             },
             consts.ports.PCI_CONFIG_DATA...(consts.ports.PCI_CONFIG_DATA + 4) - 1 => {
-                if (self.config_address.bus != 0) return;
-                if (self.config_address.function != 0) return;
-                if (self.config_address.device >= self.devices.items.len) return;
+                if (self.config_address.bus != 0 // bus number is always 0
+                or self.config_address.function != 0 // function number is always 0
+                or self.config_address.device >= self.devices.items.len // exceed the number of devices
+                ) {
+                    for (0..data.len) |i| {
+                        data[i] = 0xFF;
+                    }
+                    return;
+                }
                 if (self.config_address.enable == false) return;
 
                 const offset = port - consts.ports.PCI_CONFIG_DATA;
