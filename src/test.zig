@@ -4,6 +4,7 @@ comptime {
     _ = @import("consts.zig");
     _ = @import("boot.zig");
     _ = @import("terminal.zig");
+    _ = @import("pci.zig");
 
     _ = @import("pio.zig");
     _ = @import("pio/serial.zig");

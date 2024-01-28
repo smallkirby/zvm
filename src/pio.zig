@@ -4,10 +4,13 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 
 pub const srl = @import("pio/serial.zig");
+const pci = @import("pci.zig");
+const consts = @import("consts.zig");
 
 /// Interface for PIO devices.
 pub const PioInterface = union(enum) {
     serial: *srl.SerialUart8250,
+    pci: *pci.Pci,
 
     /// Handle PIO read event.
     pub fn in(self: @This(), port: u16, data: []u8) !void {

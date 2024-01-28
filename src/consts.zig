@@ -22,6 +22,14 @@ pub const layout = struct {
     pub const INITRD = 0x3000_0000;
 };
 
+pub const ports = struct {
+    /// Register to specify the PCI configuration space address.
+    pub const PCI_CONFIG_ADDRESS = 0x0CF8;
+    /// Register to read/write the PCI configuration space data.
+    /// The data address is specified by `PCI_CONFIG_ADDRESS` register.
+    pub const PCI_CONFIG_DATA = 0x0CFC;
+};
+
 pub const units = struct {
     pub const KB = 1024;
     pub const MB = 1024 * KB;

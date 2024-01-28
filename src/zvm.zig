@@ -7,6 +7,7 @@ const boot = @import("boot.zig");
 const builtin = @import("builtin");
 const terminal = @import("terminal.zig");
 const pio = @import("pio.zig");
+const pci = @import("pci.zig");
 const linux = std.os.linux;
 
 pub const VMError = error{
@@ -34,6 +35,8 @@ pub const VM = struct {
     guest_mem: []u8,
     /// 8250 serial console
     serial: pio.srl.SerialUart8250,
+    /// PCI
+    pci: pci.Pci,
     /// Device manager
     device_manager: pio.PioDeviceManager,
     /// TTY
@@ -65,6 +68,7 @@ pub const VM = struct {
             .general_allocator = undefined,
             .guest_mem = undefined,
             .serial = undefined,
+            .pci = undefined,
             .device_manager = undefined,
             .tty = undefined,
         };
@@ -117,12 +121,20 @@ pub const VM = struct {
         // Init serial console
         self.serial = pio.srl.SerialUart8250.new(self.vm_fd);
 
+        // Init PCI
+        self.pci = try pci.Pci.new(self.general_allocator);
+
         // Init device manager
         self.device_manager = pio.PioDeviceManager.new(self.general_allocator);
         try self.device_manager.add_device(.{
             .addr_start = pio.srl.SerialUart8250.PORTS.COM1,
             .addr_end = pio.srl.SerialUart8250.PORTS.COM1 + 8,
             .interface = .{ .serial = &self.serial },
+        });
+        try self.device_manager.add_device(.{
+            .addr_start = consts.ports.PCI_CONFIG_ADDRESS,
+            .addr_end = consts.ports.PCI_CONFIG_DATA + 4,
+            .interface = .{ .pci = &self.pci },
         });
     }
 
@@ -511,6 +523,9 @@ pub const VM = struct {
 
         // deinit devices
         self.device_manager.deinit();
+
+        // deinit PCI
+        self.pci.deinit();
 
         // TODO: other deinitializations
     }

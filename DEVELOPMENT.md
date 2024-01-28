@@ -14,6 +14,7 @@ and with paging disabled.
 - [The Definitive KVM API Documentation](https://docs.kernel.org/virt/kvm/api.html#): KVM API documentation.
 - [KVM HOST IN A FEW LINES OF CODE](https://zserge.com/posts/kvm/): Minimal KVM host in C that can partially boot Linux.
 - [linux-insides](https://0xax.gitbooks.io/linux-insides/content/): Detailed guide to the Linux kernel.
+- [OSDev - PCI](https://wiki.osdev.org/PCI): PCI programming.
 
 ## Tips
 
