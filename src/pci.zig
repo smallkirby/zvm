@@ -179,6 +179,8 @@ const PciHostBridge = struct {
         .header_type = 1,
         .class_code = 0x06, // Bridge
         .subclass = 0x00, // Host bridge
+        // necessary to suppress invalid configuration of bridge warning.
+        .bar2 = 0x00_FF_FF_00, // type1: secondary latency, subordinate bus, secondary bus, primary bus
     },
 
     pub fn in(self: @This(), port: u64, data: []u8) !void {
