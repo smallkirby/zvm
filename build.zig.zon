@@ -7,5 +7,9 @@
             .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.7.0.tar.gz",
             .hash = "1220f48518ce22882e102255ed3bcdb7aeeb4891f50b2cdd3bd74b5b2e24d3149ba2",
         },
+        .chameleon = .{
+            .url = "https://github.com/tr1ckydev/chameleon/archive/3d7fdd61598edecacd2c53c5ecff76a79abb8661.tar.gz",
+            .hash = "1220018d65a2105db410846019d23fd9966ace9f5cacc2fdec5c1ad4275009b94b70",
+        },
     },
 }
