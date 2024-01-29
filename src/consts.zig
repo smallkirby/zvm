@@ -28,6 +28,11 @@ pub const ports = struct {
     /// Register to read/write the PCI configuration space data.
     /// The data address is specified by `PCI_CONFIG_ADDRESS` register.
     pub const PCI_CONFIG_DATA = 0x0CFC;
+
+    /// Start address of the I/O port space for virtio-net device.
+    pub const VIRTIONET_IO = 0x1000;
+    /// Size of the I/O port space for virtio-net device.
+    pub const VIRTIONET_IO_SIZE = 0x100;
 };
 
 pub const units = struct {

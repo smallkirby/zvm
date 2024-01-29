@@ -3,6 +3,7 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const consts = @import("consts.zig");
+const virtio = @import("virtio.zig");
 const assert = std.debug.assert;
 
 /// PCI (Peripheral Component Interconnect) and connected devices.
@@ -48,10 +49,29 @@ pub const Pci = struct {
                 }
                 if (self.config_address.enable == false) return;
 
+                const reg = self.config_address.offset;
                 const offset = port - consts.ports.PCI_CONFIG_DATA;
+                std.log.debug(
+                    "PCI configuration read @ {X:0>4}:{X:0>2}:{X:0>2}: reg={X}, offset={X}",
+                    .{
+                        self.config_address.bus,
+                        self.config_address.device,
+                        self.config_address.function,
+                        reg,
+                        offset,
+                    },
+                );
+
                 switch (self.devices.items[self.config_address.device]) {
                     inline else => |d| {
-                        const reg = self.config_address.offset;
+                        if (get_bar(d.configuration, reg, offset)) |bar| {
+                            if (bar.to_u32() == 0xFFFF_FFFF and data.len == 4) {
+                                // they are asking the size of I/O space.
+                                std.mem.writeIntLittle(u32, data[0..4], d.iospace_size);
+                                return;
+                            }
+                        }
+
                         @memcpy(
                             data,
                             std.mem.asBytes(&d.configuration)[reg + offset .. reg + offset + data.len],
@@ -75,9 +95,66 @@ pub const Pci = struct {
                 }
                 self.config_address = ConfigAddress.from_u32(std.mem.readIntLittle(u32, v));
             },
-            consts.ports.PCI_CONFIG_DATA => {}, // TODO
+            consts.ports.PCI_CONFIG_DATA => {
+                if (self.config_address.bus != 0 // bus number is always 0
+                or self.config_address.function != 0 // function number is always 0
+                or self.config_address.device >= self.devices.items.len // exceed the number of devices
+                ) return;
+                if (self.config_address.enable == false) return;
+
+                const offset = port - consts.ports.PCI_CONFIG_DATA;
+                const reg = self.config_address.offset;
+                std.log.debug(
+                    "PCI configuration write @ {X:0>4}:{X:0>2}:{X:0>2}: reg={X}, offset={X}",
+                    .{
+                        self.config_address.bus,
+                        self.config_address.device,
+                        self.config_address.function,
+                        reg,
+                        offset,
+                    },
+                );
+
+                switch (self.devices.items[self.config_address.device]) {
+                    inline else => |*d| {
+                        var v = @constCast(std.mem.asBytes(&d.configuration));
+                        d.configuration = std.mem.bytesToValue(DeviceHeaderType0, v);
+                    },
+                }
+            },
             else => {},
         }
+    }
+
+    /// Get the BAR which is referred by the given reg and offset.
+    /// Note that offset must be 4-byte aligned,
+    /// otherwise this function returns null.
+    fn get_bar(
+        header: DeviceHeaderType0,
+        reg: u16,
+        offset: u64,
+    ) ?DeviceHeaderType0.IoBar {
+        if ( //
+        @offsetOf(DeviceHeaderType0, "bar0") <= reg + offset //
+        and reg + offset < @offsetOf(DeviceHeaderType0, "bar5") + @sizeOf(DeviceHeaderType0.IoBar) //
+        and offset % 4 != 0) {
+            return null;
+        }
+
+        switch (reg + offset) {
+            @offsetOf(DeviceHeaderType0, "bar0") => return header.bar0,
+            @offsetOf(DeviceHeaderType0, "bar1") => return header.bar1,
+            @offsetOf(DeviceHeaderType0, "bar2") => return header.bar2,
+            @offsetOf(DeviceHeaderType0, "bar3") => return header.bar3,
+            @offsetOf(DeviceHeaderType0, "bar4") => return header.bar4,
+            @offsetOf(DeviceHeaderType0, "bar5") => return header.bar5,
+            else => return null,
+        }
+    }
+
+    /// Connect a PCI device.
+    pub fn add_device(self: *@This(), device: PciDevice) !void {
+        try self.devices.append(device);
     }
 
     fn data_to_u32(data: []u8) u32 {
@@ -123,10 +200,10 @@ const ConfigAddress = packed struct {
 };
 
 /// PCI device header of type 0x0 in a configuration register.
-const DeviceHeaderType0 = packed struct {
+pub const DeviceHeaderType0 = packed struct {
     vendor_id: u16 = 0xFFFF, // invalid, not exist
     device_id: u16 = 0,
-    command: u16 = 0,
+    command: CommandRegister = .{},
     status: u16 = 0,
     revision_id: u8 = 0,
     prog_if: u8 = 0,
@@ -136,12 +213,12 @@ const DeviceHeaderType0 = packed struct {
     latency_timer: u8 = 0,
     header_type: u8 = 0,
     bist: u8 = 0,
-    bar0: u32 = 0,
-    bar1: u32 = 0,
-    bar2: u32 = 0,
-    bar3: u32 = 0,
-    bar4: u32 = 0,
-    bar5: u32 = 0,
+    bar0: IoBar = .{},
+    bar1: IoBar = .{},
+    bar2: IoBar = .{},
+    bar3: IoBar = .{},
+    bar4: IoBar = .{},
+    bar5: IoBar = .{},
     cardbus_cis_pointer: u32 = 0,
     subsystem_vendor_id: u16 = 0,
     subsystem_id: u16 = 0,
@@ -158,11 +235,58 @@ const DeviceHeaderType0 = packed struct {
             @compileError("Invalid size of ConfigurationRegisterType0");
         }
     }
+
+    /// I/O Space Base Address Register
+    pub const IoBar = packed struct(u32) {
+        /// If true, the device uses I/O space.
+        /// If false, the device uses memory space.
+        /// We only support I/O space BAR, so this bit must be set.
+        use_io_space: bool = true,
+        /// Reserved for I/O space BAR.
+        reserved: u1 = 0,
+        /// 4-byte aligned base address.
+        address: u30 = 0,
+
+        pub fn to_u32(self: @This()) u32 {
+            return @bitCast(self);
+        }
+
+        pub fn from_u32(v: u32) @This() {
+            return @bitCast(v);
+        }
+    };
+
+    /// Command register.
+    pub const CommandRegister = packed struct(u16) {
+        /// If set true, device responds to I/O space accesses.
+        enable_io_space: bool = true,
+        /// If set true, device responds to memory space accesses.
+        enable_memory_space: bool = false,
+        /// If set true, device behaves as a bus master.
+        bus_master: bool = false,
+        /// If set true, device can monitor special cycle operations.
+        special_cycles: bool = false,
+        /// If set true, device can generate memory write and invalidate operations.
+        mem_write_and_invalidate_enable: bool = false,
+        /// If set true, device does not respond to palette register writes.
+        vga_palette_snoop: bool = false,
+        /// If set true, device takes normal action for a parity error.
+        parity_error_response: bool = false,
+        _reserved1: bool = false,
+        /// If set true, SERR# driver is enabled.
+        serr_enable: bool = false,
+        /// If set true, device is allowed to generate fast back-to-back transactions.
+        fast_back_to_back_enable: bool = false,
+        /// If set true, INTx# signal is not asserted.
+        interrupt_disable: bool = false,
+        _reserved2: u5 = 0,
+    };
 };
 
 /// PCI device interface.
 const PciDevice = union(enum) {
     bridge: PciHostBridge,
+    virtio_net: virtio.VirtioNet,
     // Add other device interfaces here.
 };
 
@@ -180,8 +304,12 @@ const PciHostBridge = struct {
         .class_code = 0x06, // Bridge
         .subclass = 0x00, // Host bridge
         // necessary to suppress invalid configuration of bridge warning.
-        .bar2 = 0x00_FF_FF_00, // type1: secondary latency, subordinate bus, secondary bus, primary bus
+        .bar2 = DeviceHeaderType0.IoBar.from_u32(
+            0x00_FF_FF_00, // type1: secondary latency, subordinate bus, secondary bus, primary bus
+        ),
     },
+    // Size of I/O space.
+    iospace_size: u32 = 0,
 
     pub fn in(self: @This(), port: u64, data: []u8) !void {
         _ = self;

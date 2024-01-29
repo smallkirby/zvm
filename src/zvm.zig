@@ -8,6 +8,7 @@ const builtin = @import("builtin");
 const terminal = @import("terminal.zig");
 const pio = @import("pio.zig");
 const pci = @import("pci.zig");
+const virtio = @import("virtio.zig");
 const linux = std.os.linux;
 
 pub const VMError = error{
@@ -123,6 +124,7 @@ pub const VM = struct {
 
         // Init PCI
         self.pci = try pci.Pci.new(self.general_allocator);
+        try self.pci.add_device(.{ .virtio_net = virtio.VirtioNet{} });
 
         // Init device manager
         self.device_manager = pio.PioDeviceManager.new(self.general_allocator);

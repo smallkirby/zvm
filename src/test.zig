@@ -9,6 +9,8 @@ comptime {
     _ = @import("pio.zig");
     _ = @import("pio/serial.zig");
 
+    _ = @import("virtio.zig");
+
     _ = @import("util.zig");
 
     @import("std").testing.refAllDecls(@This());
