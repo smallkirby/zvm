@@ -7,7 +7,7 @@ const clap = @import("clap");
 const Chameleon = @import("chameleon").Chameleon;
 
 pub const std_options = struct {
-    pub const log_level = .debug; // Edit here to chnage log level
+    pub const log_level = .info; // Edit here to chnage log level
     pub const logFn = logFunc;
 };
 
