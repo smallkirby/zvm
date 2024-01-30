@@ -55,6 +55,9 @@ $ zig build run -- --help
             Memory size. (eg. 100MB, 1G, 2000B)
 ```
 
+You can change the log level by editing `std_options` variable in [/src/main.zig](/src/main.zig).
+Available log levels are `.debug`, `.info`, `.warn`, and `.err`.
+
 ## Tests
 
 You possibly need root privilege to run tests depending on the capabilities you have.
@@ -69,7 +72,7 @@ zig build test --summary all
 - Host OS: Any modern version of Linux
 - Guest OS: Linux v6.2
 - Zig v0.11.0
-  - It might work on later versions until Zig introduces breaking changes. But it would happen soon, Zig is still not a matured language at all...
+  - It might work on later versions until Zig introduces breaking changes. But it would happen soon, Zig is still not a mature language at all...
 
 ## Notes
 
