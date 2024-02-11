@@ -65,8 +65,9 @@ pub const Pci = struct {
                 switch (self.devices.items[self.config_address.device]) {
                     inline else => |d| {
                         if (get_bar(d.configuration, reg, offset)) |bar| {
-                            if (bar.to_u32() == 0xFFFF_FFFF and data.len == 4) {
+                            if (bar.to_u32() == 0xFFFF_FFFF and data.len == 4 and reg == @offsetOf(DeviceHeaderType0, "bar0")) {
                                 // they are asking the size of I/O space.
+                                // for now, we respond only to BAR0 request.
                                 std.mem.writeIntLittle(u32, data[0..4], d.iospace_size);
                                 std.log.debug("Responding I/O space size: {X}", .{d.iospace_size});
                                 return;
@@ -245,7 +246,7 @@ pub const DeviceHeaderType0 = packed struct {
         /// If true, the device uses I/O space.
         /// If false, the device uses memory space.
         /// We only support I/O space BAR, so this bit must be set.
-        use_io_space: bool = true,
+        use_io_space: bool = false,
         /// Reserved for I/O space BAR.
         reserved: u1 = 0,
         /// 4-byte aligned base address.
