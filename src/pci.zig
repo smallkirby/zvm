@@ -74,14 +74,20 @@ pub const Pci = struct {
                             }
                         }
 
-                        @memcpy(
-                            data,
-                            std.mem.asBytes(&d.configuration)[reg + offset .. reg + offset + data.len],
-                        );
+                        if (reg + offset >= @sizeOf(DeviceHeaderType0)) {
+                            try d.configurationIn(reg + offset, data);
+                        } else {
+                            @memcpy(
+                                data,
+                                std.mem.asBytes(&d.configuration)[reg + offset .. reg + offset + data.len],
+                            );
+                        }
                     },
                 }
             },
-            else => {},
+            else => {
+                std.log.warn("PCI: in  :unknown port: 0x{X:0>4}", .{port});
+            },
         }
     }
 
@@ -127,7 +133,9 @@ pub const Pci = struct {
                     },
                 }
             },
-            else => {},
+            else => {
+                std.log.warn("PCI: out :unknown port: 0x{X:0>4}", .{port});
+            },
         }
     }
 
@@ -209,7 +217,7 @@ pub const DeviceHeaderType0 = packed struct {
     vendor_id: u16 = 0xFFFF, // invalid, not exist
     device_id: u16 = 0,
     command: CommandRegister = .{},
-    status: u16 = 0,
+    status: StatusRegister = .{},
     revision_id: u8 = 0,
     prog_if: u8 = 0,
     subclass: u8 = 0,
@@ -286,6 +294,23 @@ pub const DeviceHeaderType0 = packed struct {
         interrupt_disable: bool = false,
         _reserved2: u5 = 0,
     };
+
+    pub const StatusRegister = packed struct(u16) {
+        _reserved1: u3 = 0,
+        interrupt_status: bool = false,
+        /// If set to true, the device inmpllements the pointer for a New Capabilities List.
+        capabilities_list: bool = false,
+        mhz66_capable: bool = false,
+        _reserved2: u1 = 0,
+        fast_back_to_back_capable: bool = false,
+        master_data_parity_error: bool = false,
+        devsel_timing: u2 = 0,
+        signaled_target_abort: bool = false,
+        received_target_abort: bool = false,
+        received_master_abort: bool = false,
+        signaled_system_error: bool = false,
+        detected_parity_error: bool = false,
+    };
 };
 
 /// PCI device interface.
@@ -326,6 +351,13 @@ const PciHostBridge = struct {
     pub fn out(self: @This(), port: u64, data: []u8) !void {
         _ = self;
         _ = port;
+        _ = data;
+        return;
+    }
+
+    pub fn configurationIn(self: @This(), offset: u64, data: []u8) !void {
+        _ = self;
+        _ = offset;
         _ = data;
         return;
     }
