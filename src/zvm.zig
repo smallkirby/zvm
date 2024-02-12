@@ -131,6 +131,8 @@ pub const VM = struct {
 
         // Init PCI
         self.pci = try pci.Pci.new(self.general_allocator);
+        const virtio_net = try virtio.VirtioNet.new(self.general_allocator);
+        try self.pci.add_device(virtio_net.device());
 
         // Init device manager
         self.device_manager = pio.PioDeviceManager.new(self.general_allocator);
@@ -691,7 +693,7 @@ test "Load dummy kernel & Set CPUID" {
     for (0..cpuid.nent) |i| {
         var entry = &cpuid.entries[i];
         switch (entry.function) {
-            consts.kvm.KVM_CPUID_SIGNATURE => {
+            cid.functions.KVM_CPUID_SIGNATURE => {
                 try expect(entry.eax == consts.kvm.KVM_CPUID_FEATURES);
                 try expect(entry.ebx == 0x4B4D564B);
                 try expect(entry.ecx == 0x564B4D56);

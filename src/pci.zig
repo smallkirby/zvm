@@ -19,6 +19,8 @@ pub const Pci = struct {
     /// Device number is assigned by the order of `devices` array.
     /// Function number is always 0.
     devices: ArrayList(PciDevice),
+    /// General allocator used for this struct.
+    allocator: std.mem.Allocator,
 
     /// Initialize PCI.
     /// Caller must call `deinit` after use.
@@ -26,6 +28,7 @@ pub const Pci = struct {
         var self = @This(){
             .config_address = .{},
             .devices = ArrayList(PciDevice).init(allocator),
+            .allocator = allocator,
         };
 
         const bridge = &(try allocator.alloc(HostBridge, 1))[0];
@@ -181,6 +184,9 @@ pub const Pci = struct {
 
     /// Deinitialize PCI.
     pub fn deinit(self: *@This()) void {
+        for (self.devices.items) |*device| {
+            device.deinit(self.allocator);
+        }
         self.devices.deinit();
     }
 };
@@ -314,43 +320,43 @@ pub const DeviceHeaderType0 = packed struct {
 
 // =================================== //
 
-//const expect = std.testing.expect;
-//
-//test "PCI Configuration BAR0 size read" {
-//    const allocator = std.heap.page_allocator;
-//    var pci = try Pci.new(allocator);
-//    defer pci.deinit();
-//
-//    try pci.add_device(.{ .virtio_net = virtio.VirtioNet{} });
-//
-//    var addr = ConfigAddress{
-//        .offset = @offsetOf(DeviceHeaderType0, "bar0"),
-//        .device = 1,
-//        .enable = true,
-//    };
-//
-//    // set addr to PCI_CONFIG_ADDRESS
-//    try pci.out(consts.ports.PCI_CONFIG_ADDRESS, std.mem.asBytes(&addr));
-//    try expect(pci.config_address.as_u32() == addr.as_u32());
-//
-//    // read BAR0 original value
-//    var data = [_]u8{ 0, 0, 0, 0 };
-//    try pci.in(consts.ports.PCI_CONFIG_DATA, &data);
-//    const original_bar0 = std.mem.readIntLittle(u32, &data);
-//    try expect(original_bar0 == 0x1001);
-//
-//    // set BAR0 to 0xFFFF_FFFF
-//    std.mem.writeIntLittle(u32, &data, 0xFFFF_FFFF);
-//    try pci.out(consts.ports.PCI_CONFIG_DATA, &data);
-//    try expect(pci.devices.items[1].virtio_net.configuration.bar0.to_u32() == 0xFFFF_FFFF);
-//
-//    // read BAR0 size
-//    try pci.in(consts.ports.PCI_CONFIG_DATA, &data);
-//    try expect(std.mem.readIntLittle(u32, &data) == consts.ports.VIRTIONET_IO_SIZE);
-//
-//    // set BAR0 to original value
-//    std.mem.writeIntLittle(u32, &data, original_bar0);
-//    try pci.out(consts.ports.PCI_CONFIG_DATA, &data);
-//    try expect(pci.devices.items[1].virtio_net.configuration.bar0.to_u32() == original_bar0);
-//}
-//
+const expect = std.testing.expect;
+
+test "PCI Configuration BAR0 size read" {
+    const allocator = std.heap.page_allocator;
+    var pci = try Pci.new(allocator);
+    defer pci.deinit();
+
+    const vnet = try virtio.VirtioNet.new(allocator);
+    try pci.add_device(vnet.device());
+
+    var addr = ConfigAddress{
+        .offset = @offsetOf(DeviceHeaderType0, "bar0"),
+        .device = 1,
+        .enable = true,
+    };
+
+    // set addr to PCI_CONFIG_ADDRESS
+    try pci.out(consts.ports.PCI_CONFIG_ADDRESS, std.mem.asBytes(&addr));
+    try expect(pci.config_address.as_u32() == addr.as_u32());
+
+    // read BAR0 original value
+    var data = [_]u8{ 0, 0, 0, 0 };
+    try pci.in(consts.ports.PCI_CONFIG_DATA, &data);
+    const original_bar0 = std.mem.readIntLittle(u32, &data);
+    try expect(original_bar0 == 0x1001);
+
+    // set BAR0 to 0xFFFF_FFFF
+    std.mem.writeIntLittle(u32, &data, 0xFFFF_FFFF);
+    try pci.out(consts.ports.PCI_CONFIG_DATA, &data);
+    try expect(pci.devices.items[1].configuration.bar0.to_u32() == 0xFFFF_FFFF);
+
+    // read BAR0 size
+    try pci.in(consts.ports.PCI_CONFIG_DATA, &data);
+    try expect(std.mem.readIntLittle(u32, &data) == consts.ports.VIRTIONET_IO_SIZE);
+
+    // set BAR0 to original value
+    std.mem.writeIntLittle(u32, &data, original_bar0);
+    try pci.out(consts.ports.PCI_CONFIG_DATA, &data);
+    try expect(pci.devices.items[1].configuration.bar0.to_u32() == original_bar0);
+}

@@ -1,3 +1,4 @@
+const std = @import("std");
 const dev = @import("device.zig");
 const DeviceHeader = dev.DeviceHeader;
 const PciDevice = dev.PciDevice;
@@ -36,6 +37,7 @@ pub const HostBridge = struct {
                 .out = out,
                 .configurationIn = configurationIn,
                 .configurationOut = configurationOut,
+                .deinit = deinit,
             },
         };
     }
@@ -44,4 +46,8 @@ pub const HostBridge = struct {
     fn out(_: *anyopaque, _: u64, _: []u8) void {}
     fn configurationIn(_: *anyopaque, _: u64, _: []u8) void {}
     fn configurationOut(_: *anyopaque, _: u64, _: []u8) void {}
+    fn deinit(ctx: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        allocator.destroy(self);
+    }
 };
