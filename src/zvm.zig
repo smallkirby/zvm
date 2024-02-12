@@ -36,6 +36,8 @@ pub const VM = struct {
     guest_mem: []u8,
     /// 8250 serial console
     serial: pio.srl.SerialUart8250,
+    /// PS/2 controller
+    ps2: pio.ps2.Ps2Controller,
     /// PCI
     pci: pci.Pci,
     /// Device manager
@@ -69,6 +71,7 @@ pub const VM = struct {
             .general_allocator = undefined,
             .guest_mem = undefined,
             .serial = undefined,
+            .ps2 = undefined,
             .pci = undefined,
             .device_manager = undefined,
             .tty = undefined,
@@ -122,6 +125,9 @@ pub const VM = struct {
         // Init serial console
         self.serial = pio.srl.SerialUart8250.new(self.vm_fd);
 
+        // Init PS/2 controller
+        self.ps2 = pio.ps2.Ps2Controller.new();
+
         // Init PCI
         self.pci = try pci.Pci.new(self.general_allocator);
         try self.pci.add_device(.{ .virtio_net = virtio.VirtioNet{} });
@@ -132,6 +138,11 @@ pub const VM = struct {
             .addr_start = pio.srl.SerialUart8250.PORTS.COM1,
             .addr_end = pio.srl.SerialUart8250.PORTS.COM1 + 8,
             .interface = .{ .serial = &self.serial },
+        });
+        try self.device_manager.add_device(.{
+            .addr_start = pio.ps2.Ps2Controller.PIO_START,
+            .addr_end = pio.ps2.Ps2Controller.PIO_END,
+            .interface = .{ .ps2 = &self.ps2 },
         });
         try self.device_manager.add_device(.{
             .addr_start = 0,

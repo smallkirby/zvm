@@ -86,7 +86,7 @@ pub const Pci = struct {
                 }
             },
             else => {
-                std.log.warn("PCI: in  :unknown port: 0x{X:0>4}", .{port});
+                std.log.debug("PCI: in  :unknown port: 0x{X:0>4}", .{port});
             },
         }
     }
@@ -134,7 +134,7 @@ pub const Pci = struct {
                 }
             },
             else => {
-                std.log.warn("PCI: out :unknown port: 0x{X:0>4}", .{port});
+                std.log.debug("PCI: out :unknown port: 0x{X:0>4}", .{port});
             },
         }
     }
