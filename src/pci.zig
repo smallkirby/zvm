@@ -29,6 +29,7 @@ pub const Pci = struct {
         };
 
         const bridge = &(try allocator.alloc(HostBridge, 1))[0];
+        bridge.* = HostBridge{};
         try self.devices.append(bridge.device());
 
         return self;
@@ -39,7 +40,7 @@ pub const Pci = struct {
         switch (port) {
             consts.ports.PCI_CONFIG_ADDRESS...(consts.ports.PCI_CONFIG_ADDRESS + 4) - 1 => {
                 // TODO: should we consider offset and allow non-4byte read?
-                @memcpy(data, std.mem.asBytes(&self.config_address)[0..data.len]);
+                @memcpy(data, std.mem.asBytes(&self.config_address));
             },
             consts.ports.PCI_CONFIG_DATA...(consts.ports.PCI_CONFIG_DATA + 4) - 1 => {
                 if (self.config_address.bus != 0 // bus number is always 0
