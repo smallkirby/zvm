@@ -134,13 +134,8 @@ pub const VM = struct {
             .interface = .{ .serial = &self.serial },
         });
         try self.device_manager.add_device(.{
-            .addr_start = consts.ports.PCI_CONFIG_ADDRESS,
-            .addr_end = consts.ports.PCI_CONFIG_DATA + 4,
-            .interface = .{ .pci = &self.pci },
-        });
-        try self.device_manager.add_device(.{
-            .addr_start = consts.ports.VIRTIONET_IO,
-            .addr_end = consts.ports.VIRTIONET_IO + consts.ports.VIRTIONET_IO_SIZE,
+            .addr_start = 0,
+            .addr_end = 0xFFFF, // Map all available I/O ports and delegates all requests to PCI
             .interface = .{ .pci = &self.pci },
         });
     }
