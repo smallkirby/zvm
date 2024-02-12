@@ -3,6 +3,7 @@
 const std = @import("std");
 const kvm = @import("kvm.zig");
 const consts = @import("consts.zig");
+const cid = @import("cpuid.zig");
 const boot = @import("boot.zig");
 const builtin = @import("builtin");
 const terminal = @import("terminal.zig");
@@ -450,14 +451,16 @@ pub const VM = struct {
 
     /// Initialize CPUID.
     /// This function set the response of CPUID_SIGNATURE to the KVM signature.
+    /// ZVM passthroughs the host CPU to the guest except for some features.
     fn init_cpuid(self: *@This()) !void {
         var cpuid = try kvm.system.get_supported_cpuid(self.kvm_fd);
+        const f = cid.functions;
 
         var set = false;
         for (0..cpuid.nent) |i| {
             var entry = &cpuid.entries[i];
             switch (entry.function) {
-                consts.kvm.KVM_CPUID_SIGNATURE => {
+                f.KVM_CPUID_SIGNATURE => {
                     entry.eax = consts.kvm.KVM_CPUID_FEATURES;
                     // This ID is defined by Linux. We cannot choose arbitrary value.
                     entry.ebx = 0x4B4D564B; // "KVMK"
@@ -465,7 +468,21 @@ pub const VM = struct {
                     entry.edx = 0x0000004D; // "M\x00\x00\x00"
                     set = true;
                 },
-                7 => {
+                f.FEATURE_INFORMATION => {
+                    // `hypervisor` is available in latest chipsets.
+                    // Linux kernel seems to check this flag
+                    // to determine if it initializes uncore.
+                    // We declare that the guest is running on a hypervisor
+                    // to avoid unnecessary uncore initialization.
+                    var flags_ecx: cid.CpuidFeatureFlagEcx = @bitCast(entry.ecx);
+                    var flags_edx: cid.CpuidFeatureFlagEdx = @bitCast(entry.edx);
+
+                    flags_ecx.hypervisor = true;
+
+                    entry.ecx = @bitCast(flags_ecx);
+                    entry.edx = @bitCast(flags_edx);
+                },
+                f.STRUCTURE_EXTENDED_FEATURE_FLAGS => {
                     // HACK
                     // This is a dirty workaround for a Intel FSRM alternative instructions.
                     // This oneline code disables the alternative instructions.

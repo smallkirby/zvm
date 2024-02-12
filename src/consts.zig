@@ -44,7 +44,6 @@ pub const units = struct {
 pub const kvm = struct {
     pub const KVM_NR_INTERRUPTS = 256;
 
-    pub const KVM_CPUID_SIGNATURE = 0x4000_0000;
     pub const KVM_CPUID_FEATURES = 0x4000_0001;
 
     pub const KVM_EXIT_IO = 0x00000002;
