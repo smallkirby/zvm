@@ -131,7 +131,6 @@ pub const VM = struct {
 
         // Init PCI
         self.pci = try pci.Pci.new(self.general_allocator);
-        try self.pci.add_device(.{ .virtio_net = virtio.VirtioNet{} });
 
         // Init device manager
         self.device_manager = pio.PioDeviceManager.new(self.general_allocator);
