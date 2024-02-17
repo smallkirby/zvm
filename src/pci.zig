@@ -91,7 +91,18 @@ pub const Pci = struct {
                 }
             },
             else => {
-                std.log.debug("PCI: in  :unknown port: 0x{X:0>4}", .{port});
+                if (self.config_address.bus != 0 // bus number is always 0
+                or self.config_address.function != 0 // function number is always 0
+                or self.config_address.device >= self.devices.items.len // exceed the number of devices
+                ) {
+                    std.log.debug("PCI in: invalid device: bus=0x{X:0>2}, device=0x{X:0>2}", .{
+                        self.config_address.bus,
+                        self.config_address.device,
+                    });
+                } else {
+                    const device = &self.devices.items[self.config_address.device];
+                    try device.in(port, data);
+                }
             },
         }
     }
@@ -136,7 +147,18 @@ pub const Pci = struct {
                 d.configuration = std.mem.bytesToValue(DeviceHeaderType0, v);
             },
             else => {
-                std.log.debug("PCI: out :unknown port: 0x{X:0>4}", .{port});
+                if (self.config_address.bus != 0 // bus number is always 0
+                or self.config_address.function != 0 // function number is always 0
+                or self.config_address.device >= self.devices.items.len // exceed the number of devices
+                ) {
+                    std.log.debug("PCI in: invalid device: bus=0x{X:0>2}, device=0x{X:0>2}", .{
+                        self.config_address.bus,
+                        self.config_address.device,
+                    });
+                } else {
+                    const device = &self.devices.items[self.config_address.device];
+                    try device.out(port, data);
+                }
             },
         }
     }
