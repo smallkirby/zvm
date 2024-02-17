@@ -154,7 +154,6 @@ pub const VM = struct {
     }
 
     /// Clear all segment registers of all vCPUs
-    /// TODO: conflicting with `init_protected_mode`. Remove this?
     pub fn clear_segment_registers(self: *@This()) !void {
         if (self.vcpus.len == 0) {
             return VMError.NotReady;
