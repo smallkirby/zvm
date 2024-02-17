@@ -117,7 +117,6 @@ pub const Pci = struct {
                     if (i + offset >= 4) break;
                     v[i + offset] = data[i];
                 }
-                self.config_address = ConfigAddress.from_u32(std.mem.readIntLittle(u32, v));
             },
             consts.ports.PCI_CONFIG_DATA => {
                 if (self.config_address.bus != 0 // bus number is always 0
@@ -144,7 +143,6 @@ pub const Pci = struct {
                 for (0..data.len) |i| {
                     v[i + offset + reg] = data[i];
                 }
-                d.configuration = std.mem.bytesToValue(DeviceHeaderType0, v);
             },
             else => {
                 if (self.config_address.bus != 0 // bus number is always 0
