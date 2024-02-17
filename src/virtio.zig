@@ -11,9 +11,9 @@ const Bar = pci.DeviceHeaderType0.IoBar;
 /// PCI vendor ID for virtio devices
 const PCI_VIRTIO_VENDOR_ID = 0x1AF4;
 /// PCI device ID for virtio-net.
-/// Note that legacy driver uses the subsystem device ID instead.
+/// Note that legacy(transitional) driver uses the subsystem device ID instead.
 /// For modern devices, the device ID minus 0x1040 is used as an device ID.
-const PCI_VIRTIONET_DEVICE_ID = 0x1040;
+const PCI_VIRTIONET_DEVICE_ID = 0x1041;
 
 /// virtio-net PCI device
 pub const VirtioNet = struct {
