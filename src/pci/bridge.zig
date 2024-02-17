@@ -35,8 +35,8 @@ pub const HostBridge = struct {
             .vtable = &.{
                 .in = in,
                 .out = out,
-                .configurationIn = configurationIn,
-                .configurationOut = configurationOut,
+                .configuration_in = configuration_in,
+                .configuration_out = configuration_out,
                 .deinit = deinit,
             },
         };
@@ -44,8 +44,8 @@ pub const HostBridge = struct {
 
     fn in(_: *anyopaque, _: u64, _: []u8) void {}
     fn out(_: *anyopaque, _: u64, _: []u8) void {}
-    fn configurationIn(_: *anyopaque, _: u64, _: []u8) void {}
-    fn configurationOut(_: *anyopaque, _: u64, _: []u8) void {}
+    fn configuration_in(_: *anyopaque, _: u64, _: []u8) void {}
+    fn configuration_out(_: *anyopaque, _: u64, _: []u8) void {}
     fn deinit(ctx: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
         allocator.destroy(self);

@@ -82,7 +82,7 @@ pub const Pci = struct {
                 }
 
                 if (reg + offset >= @sizeOf(DeviceHeaderType0)) {
-                    try d.configurationIn(reg + offset, data);
+                    try d.configuration_in(reg + offset, data);
                 } else {
                     @memcpy(
                         data,

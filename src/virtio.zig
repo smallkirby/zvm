@@ -100,8 +100,8 @@ pub const VirtioNet = struct {
             .vtable = &.{
                 .in = in,
                 .out = out,
-                .configurationIn = configurationIn,
-                .configurationOut = configurationOut,
+                .configuration_in = configuration_in,
+                .configuration_out = configuration_out,
                 .deinit = deinit,
             },
         };
@@ -140,7 +140,7 @@ pub const VirtioNet = struct {
     }
 
     /// Handle a read event on the PCI configuration space except for the header.
-    fn configurationIn(ctx: *anyopaque, offset: u64, data: []u8) void {
+    fn configuration_in(ctx: *anyopaque, offset: u64, data: []u8) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
         var cap: VirtioPciCap = undefined;
         var cap_offset: usize = 0;
@@ -174,7 +174,7 @@ pub const VirtioNet = struct {
     }
 
     /// Handle a write event on the PCI configuration space except for the header.
-    fn configurationOut(_: *anyopaque, _: u64, _: []u8) void {}
+    fn configuration_out(_: *anyopaque, _: u64, _: []u8) void {}
 
     fn deinit(ctx: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
