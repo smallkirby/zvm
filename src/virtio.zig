@@ -79,6 +79,10 @@ pub const VirtioNet = struct {
     },
     /// Common configuration structure
     cfg_common: VirtioPciCommonConfig = .{},
+    /// virtio device features
+    device_features: VirtioFeatureBit = .{
+        .version1 = true,
+    },
 
     /// Allocate a new virtio-net PCI device.
     /// Caller must ensure calling `deinit` after the device is no longer used.
@@ -109,22 +113,36 @@ pub const VirtioNet = struct {
 
     fn in(ctx: *anyopaque, port: u64, data: []u8) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        std.log.debug("virtio-net: in port={X}, data.len={X}", .{ port, data.len });
 
         if (self.get_configuration(port)) |cfg_off| {
-            @memcpy(data, cfg_off.cfg[cfg_off.offset .. cfg_off.offset + data.len]);
+            cfg_off.cfg.read(
+                cfg_off.offset,
+                data,
+                self.device_features,
+            );
         } else {
-            std.log.warn("virtio-net: in: invalid port={X}", .{port});
+            std.log.debug("virtio-net: in: invalid port={X}", .{port});
             return;
         }
     }
 
-    fn out(_: *anyopaque, port: u64, data: []u8) void {
-        std.log.debug("virtio-net: out port={X}, data.len={X}", .{ port, data.len });
+    fn out(ctx: *anyopaque, port: u64, data: []u8) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+
+        if (self.get_configuration(port)) |cfg_off| {
+            const offset = cfg_off.offset;
+            const v = std.mem.asBytes(cfg_off.cfg);
+            for (0..data.len) |i| {
+                v[offset + i] = data[i];
+            }
+        } else {
+            std.log.debug("virtio-net: out: invalid port={X}", .{port});
+            return;
+        }
     }
 
     const ConfigWithOffset = struct {
-        cfg: []u8,
+        cfg: *VirtioPciCommonConfig,
         offset: usize,
     };
 
@@ -132,7 +150,7 @@ pub const VirtioNet = struct {
     fn get_configuration(self: *Self, port: u64) ?ConfigWithOffset {
         switch (port) {
             BAR0...BAR0 + 1 * @sizeOf(VirtioPciCommonConfig) => return .{
-                .cfg = std.mem.asBytes(&self.cfg_common),
+                .cfg = &self.cfg_common,
                 .offset = port - BAR0,
             },
             else => return null,
@@ -250,4 +268,41 @@ const VirtioPciCommonConfig = packed struct {
     queue_avail: u64 = 0,
     /// RW
     queue_used: u64 = 0,
+
+    const OFFSET_DEV_FEATURES = @offsetOf(@This(), "device_features");
+    const OFFSET_DRIVER_FEATURES = @offsetOf(@This(), "driver_features");
+
+    pub fn read(self: @This(), offset: u64, data: []u8, features: VirtioFeatureBit) void {
+        switch (offset) {
+            OFFSET_DEV_FEATURES => {
+                const feat = std.mem.asBytes(&features);
+                const selected_feat = if (self.device_features_sel == 0)
+                    feat[0..4]
+                else
+                    feat[4..8];
+                @memcpy(data, selected_feat);
+            },
+            else => {
+                @memcpy(data, std.mem.asBytes(&self)[offset .. offset + data.len]);
+            },
+        }
+    }
+};
+
+/// virtio feature bits
+const VirtioFeatureBit = packed struct(u64) {
+    _unused1: u24 = 0,
+    notify_on_empty: bool = false, // 24-th
+    _unused2: u2 = 0,
+    any_layout: bool = false, // 27-th
+    _unused3: u4 = 0,
+    version1: bool = true, // 32-th
+    access_platform: bool = false, // 33-th
+    ring_packed: bool = false, // 34-th
+    in_order: bool = false, // 35-th
+    order_platform: bool = false, // 36-th
+    sr_iov: bool = false, // 37-th
+    _unused4: u2 = 0,
+    ring_reset: bool = false, // 40-th
+    _unused5: u23 = 0,
 };
